@@ -970,7 +970,7 @@ fig_before.add_trace(go.Scatter(
 ))
 # Mark peak timestamp
 fig_before.add_vline(
-    x=peak_time, line_dash='dash', line_color='#FFFFFF',
+    x=str(peak_time), line_dash='dash', line_color='#FFFFFF',
     annotation_text='Peak Demand', annotation_font_color='#FFFFFF'
 )
 fig_before.update_layout(
@@ -1035,7 +1035,7 @@ for _, row in top_spa.iterrows():
 
 # Mark peak timestamp
 fig_after.add_vline(
-    x=peak_time, line_dash='dash', line_color='#FFFFFF',
+    x=str(peak_time), line_dash='dash', line_color='#FFFFFF',
     annotation_text='Peak Demand', annotation_font_color='#FFFFFF'
 )
 
@@ -1106,7 +1106,7 @@ if not zoom_df.empty:
             line_width=0,
         )
     fig_zoom.add_vline(
-        x=peak_time, line_dash='dash', line_color='#FFFFFF',
+        x=str(peak_time), line_dash='dash', line_color='#FFFFFF',
         annotation_text='Peak', annotation_font_color='#FFFFFF'
     )
     fig_zoom.update_layout(
