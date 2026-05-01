@@ -969,10 +969,13 @@ fig_before.add_trace(go.Scatter(
     marker=dict(color='#F39C12', size=6, symbol='circle'),
 ))
 # Mark peak timestamp
-fig_before.add_vline(
-    x=str(peak_time), line_dash='dash', line_color='#FFFFFF',
-    annotation_text='Peak Demand', annotation_font_color='#FFFFFF'
-)
+fig_before.add_trace(go.Scatter(
+    x=[peak_time, peak_time],
+    y=[df_view['demand_proxy_mw'].min(), df_view['demand_proxy_mw'].max()],
+    mode='lines', name='Peak Demand',
+    line=dict(color='#FFFFFF', width=1.5, dash='dash'),
+    showlegend=True
+))
 fig_before.update_layout(
     paper_bgcolor='#161B22', plot_bgcolor='#161B22',
     font=dict(color='white'),
@@ -1034,10 +1037,13 @@ for _, row in top_spa.iterrows():
     ))
 
 # Mark peak timestamp
-fig_after.add_vline(
-    x=str(peak_time), line_dash='dash', line_color='#FFFFFF',
-    annotation_text='Peak Demand', annotation_font_color='#FFFFFF'
-)
+fig_after.add_trace(go.Scatter(
+    x=[peak_time, peak_time],
+    y=[df_view['demand_proxy_mw'].min(), df_view['demand_proxy_mw'].max()],
+    mode='lines', name='Peak Demand',
+    line=dict(color='#FFFFFF', width=1.5, dash='dash'),
+    showlegend=False
+))
 
 fig_after.update_layout(
     paper_bgcolor='#161B22', plot_bgcolor='#161B22',
@@ -1105,10 +1111,13 @@ if not zoom_df.empty:
             fillcolor='rgba(255, 165, 0, 0.2)',
             line_width=0,
         )
-    fig_zoom.add_vline(
-        x=str(peak_time), line_dash='dash', line_color='#FFFFFF',
-        annotation_text='Peak', annotation_font_color='#FFFFFF'
-    )
+    fig_zoom.add_trace(go.Scatter(
+    x=[peak_time, peak_time],
+    y=[zoom_df['demand_proxy_mw'].min(), zoom_df['demand_proxy_mw'].max()],
+    mode='lines', name='Peak',
+    line=dict(color='#FFFFFF', width=1.5, dash='dash'),
+    showlegend=False
+))
     fig_zoom.update_layout(
         paper_bgcolor='#161B22', plot_bgcolor='#161B22',
         font=dict(color='white'),
