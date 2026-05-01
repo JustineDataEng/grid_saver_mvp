@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -209,21 +210,46 @@ def predict_layer(df_input, model):
 # ============================================================
 # ACT LAYER
 # ============================================================
-def act_layer(df_input):
+def act_layer(df_input, reduction_rate, homes):
     df_a = df_input.copy()
     
     # Core SPA logic
     df_a['sense_triggered']      = df_a['vulnerability_event']
     df_a['spa_action_triggered'] = (df_a['sense_triggered'] & df_a['predict_triggered'])
     
+    scaled_kw_per_home = KW_PER_HOME * (reduction_rate / 4)
+    df_a['grid_saver_reduction_kw'] = np.where(
+        df_a['spa_action_triggered'],
+        homes * scaled_kw_per_home,
+        0
+    )
+    total_mw_saved = homes * scaled_kw_per_home / 1000
+    
     # Baseline vs Adjusted Dataset Logic
     df_a['adjusted_vulnerability'] = df_a['vulnerability_score'].copy()
-    
     # Apply intervention ONLY during high-risk periods (Act Layer effect)
     mask = df_a['vulnerability_score'] >= 70
     df_a.loc[mask, 'adjusted_vulnerability'] = df_a.loc[mask, 'vulnerability_score'] * 0.85
 
-    return df_a
+    return df_a, total_mw_saved
+
+# ============================================================
+# IMPACT CALCULATIONS
+# ============================================================
+def compute_impact_metrics(row, homes, reduction_rate):
+    reduction_kw   = homes * KW_PER_HOME * (reduction_rate / 4)
+    reduction_mw   = reduction_kw / 1000
+    mwh_saved      = reduction_mw * 1  
+    cost_savings   = mwh_saved * 100   
+    carbon_intensity = row[CARBON_COL] 
+    co2_avoided_tons = (carbon_intensity * mwh_saved) / 1000
+    return mwh_saved, cost_savings, co2_avoided_tons
+
+def compute_dispatch_priority(row):
+    score  = row['grid_stress_index'] * 0.5 
+    score += row.get('vuln_probability', 0) * 30
+    score += min(row[CARBON_COL] / 10, 20)
+    return round(score, 1)
 
 # ============================================================
 # PIPELINE EXECUTION
@@ -238,7 +264,11 @@ df['year']       = df['Datetime (UTC)'].dt.year
 df['week']       = df['Datetime (UTC)'].dt.isocalendar().week.astype(int)
 
 df = predict_layer(df, model)
-df_full = act_layer(df)
+df_full, _ = act_layer(df, REDUCTION_RATE, NUM_HOMES)
+
+NOTEBOOK_SENSE_TRIGGERS   = 1316
+NOTEBOOK_PREDICT_TRIGGERS = 1659
+NOTEBOOK_SPA_ACTIONS      = 154
 
 # ============================================================
 # SIDEBAR
@@ -251,7 +281,7 @@ st.sidebar.divider()
 live_mode = st.sidebar.toggle("Recent Window View (Last 24 Hours)", value=False)
 st.sidebar.divider()
 
-months_present = [m for m in month_order if m in df_full['month_name'].unique()]
+months_present = [m for m in month_order if m in df['month_name'].unique()]
 month_options  = ['All Year'] + months_present
 selected_month = st.sidebar.selectbox("Select Month", month_options)
 
@@ -264,6 +294,7 @@ homes = st.sidebar.slider(
 
 st.sidebar.divider()
 st.sidebar.markdown("**Stack**\nColab + GitHub + Streamlit")
+st.sidebar.markdown("*Justine Adzormado*")
 
 # FILTER VIEW
 if live_mode:
@@ -393,8 +424,7 @@ if not df_report.empty:
         paper_bgcolor='#161B22', plot_bgcolor='#161B22', font=dict(color='white'),
         title='Grid Vulnerability Offset (Intervention Overlay)',
         xaxis=dict(gridcolor='#30363D'), yaxis=dict(gridcolor='#30363D', range=[0, 100]),
-        height=350, margin=dict(t=40, b=20),
-        legend=dict(bgcolor='#1A1A2E', bordercolor='#333')
+        height=350, margin=dict(t=40, b=20)
     )
     st.plotly_chart(fig_trend, use_container_width=True)
 
@@ -415,38 +445,17 @@ if not df_report.empty:
         )
     st.info(insight)
 
-    # ============================================================
-    # SYSTEM IMPACT (SCALED & DATA-DRIVEN)
-    # ============================================================
+    # IMPACT AT SCALE SECTION
     st.markdown("### System Impact (Scaled)")
-    
-    # 1. SCALED CAPACITY (Purely slider-driven)
-    # E.g., 1,000,000 homes at 4% reduction = 92.0 MW capacity
-    scaled_kw_per_home = KW_PER_HOME * (reduction_rate_input / 4)
-    network_capacity_mw = (homes * scaled_kw_per_home) / 1000
-    
-    # 2. ACTUAL EXECUTION (Purely data-driven)
-    # How many times did the data force the system to trigger?
-    actual_triggered_hours = int((df_report['vulnerability_score'] >= 70).sum())
-    
-    # Actual physical load shed based on the data's timeline
-    total_mwh_shed = actual_triggered_hours * network_capacity_mw
+    hours = len(df_report)
+    impact_score = reduction.sum()
+    estimated_mwh_reduction = impact_score * 0.1 
 
     col_i1, col_i2, col_i3, col_i4 = st.columns(4)
-    
-    # The Capability (Slider)
-    col_i1.metric("Network Capacity", f"{network_capacity_mw:,.1f} MW", 
-                  help="Total load reduction available based on Homes slider")
-    
-    # The Reality (Data)
-    col_i2.metric("Triggered Events", f"{actual_triggered_hours:,} hrs", 
-                  help="Actual hours intervention fired in this dataset")
-    
-    col_i3.metric("Peak Risk Offset", f"{peak_reduction:.1f} pts", 
-                  help="Vulnerability score reduction at peak stress")
-    
-    col_i4.metric("Actual Load Shed", f"{total_mwh_shed:,.1f} MWh", 
-                  help="Total energy removed during these specific triggered events")
+    col_i1.metric("Total Risk Reduction", f"{impact_score:,.0f}")
+    col_i2.metric("Avg Reduction per Hour", f"{avg_reduction:.2f}")
+    col_i3.metric("Peak Risk Offset", f"{peak_reduction:.1f}")
+    col_i4.metric("Est. MWh Reduced (Proxy)", f"{estimated_mwh_reduction:,.1f} MWh")
 
 else:
     st.warning("No data available for the selected period.")
