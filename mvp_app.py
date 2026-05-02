@@ -764,12 +764,16 @@ mwh_saved, cost_savings, co2_avoided = compute_impact_metrics(
 )
 
 # Compute true SPA-aggregated impact across all triggered events in view
-spa_events_df = df_view[df_view['spa_action_triggered']].copy() if 'spa_action_triggered' in df_view.columns else pd.DataFrame()
-if not spa_events_df.empty:
-    total_mwh_all_events  = spa_events_df['reduction_mw'].sum()
-    total_co2_all_events  = (spa_events_df[CARBON_COL] * spa_events_df['reduction_mw']).sum() / 1000
+# reduction_mw column is computed later in Section 6 so we calculate it here independently
+scaled_kw_per_home_recs = KW_PER_HOME * (reduction_rate_input / 4)
+if 'spa_action_triggered' in df_view.columns:
+    spa_events_df = df_view[df_view['spa_action_triggered']].copy()
+    event_count = len(spa_events_df)
+    total_mwh_all_events  = event_count * (homes * scaled_kw_per_home_recs) / 1000
+    total_co2_all_events  = (spa_events_df[CARBON_COL].mean() * total_mwh_all_events) / 1000 if event_count > 0 else 0
     total_cost_all_events = total_mwh_all_events * 100
 else:
+    spa_events_df         = pd.DataFrame()
     total_mwh_all_events  = 0
     total_co2_all_events  = 0
     total_cost_all_events = 0
