@@ -473,7 +473,7 @@ st.sidebar.markdown("*Justine Adzormado*")
 
 
 # ============================================================
-# FILTER DATA
+# FILTER DATA FOR DISPLAY
 # ============================================================
 if live_mode:
     df_view = df[df[DATETIME_COL] >= df[DATETIME_COL].max() - pd.Timedelta(hours=24)].copy()
@@ -482,10 +482,40 @@ elif selected_month != 'All Year':
 else:
     df_view = df.copy()
 
+# ============================================================
+# DEBUG: Check what's happening in Live Mode
+# ============================================================
+if live_mode:
+    with st.expander("🔍 Debug Info (Live Mode)"):
+        st.info(f"🟢 Live Mode Active - Showing last 24 hours")
+        st.write(f"📅 Data range: {df_view[DATETIME_COL].min()} to {df_view[DATETIME_COL].max()}")
+        st.write(f"📊 Total rows in view: {len(df_view):,}")
+        st.write(f"🔧 Intervention enabled: {apply_intervention_flag}")
+        
+        # Check SPA events
+        temp_spa = count_spa_events(df_view['spa_action_triggered']) if 'spa_action_triggered' in df_view.columns else 0
+        st.write(f"🎯 SPA events in this period (before act_layer): {temp_spa}")
+        
+        # Check vulnerability scores
+        st.write(f"📈 Vulnerability score range: {df_view['vulnerability_score'].min():.1f} - {df_view['vulnerability_score'].max():.1f}")
+        st.write(f"⚠️ Hours above threshold: {(df_view['vulnerability_score'] >= VULNERABILITY_THRESHOLD).sum()}")
+
 if df_view.empty:
     st.warning("No data available for selected filters.")
     st.stop()
 
+# Run act layer on filtered view with user's settings and intervention toggle
+df_view, total_mw_saved = act_layer(df_view, reduction_rate_percent, homes, apply_intervention_flag)
+
+# ============================================================
+# DEBUG: After act_layer (remove after fixing)
+# ============================================================
+if live_mode:
+    with st.expander("🔍 Debug Info After Act Layer"):
+        st.write(f"✅ SPA events after act_layer: {count_spa_events(df_view['spa_action_triggered'])}")
+        st.write(f"⚡ Total reduction MWh: {df_view['reduction_mw'].sum():.2f}")
+        st.write(f"🔄 Total rebound MWh: {df_view['rebound_mw'].sum():.2f}")
+        st.write(f"📉 Adjusted demand range: {df_view['adjusted_demand_mw'].min():.0f} - {df_view['adjusted_demand_mw'].max():.0f} MW")
 # Run act layer with all parameters
 df_view, total_mw_saved = act_layer(df_view, reduction_rate_percent, homes, apply_intervention_flag)
 
@@ -924,13 +954,15 @@ creating a secondary demand spike. Grid Saver models this using:<br>
 st.markdown("<br>", unsafe_allow_html=True)
 
 
-# ============================================================
-# PEAK ZOOM WINDOW
+# PEAK ZOOM WINDOW (in expander) - WITH CHART
 # ============================================================
 with st.expander("🔍 Inspect Peak Demand Window (6 Hours Before and After Peak)"):
     st.markdown("""
     **Why ±6 hours?** This window captures the critical period around peak demand — 
-    the 6 hours before (ramp-up to peak) and 6 hours after (recovery).
+    the 6 hours before (ramp-up to peak) and 6 hours after (recovery). 
+    This is where Grid Saver intervention has the highest impact potential.
+    
+    **Calculation:** `peak_time ± 6 hours` = 13 total hours of detailed analysis
     """)
     
     zoom_df = df_view[
@@ -941,32 +973,48 @@ with st.expander("🔍 Inspect Peak Demand Window (6 Hours Before and After Peak
     if not zoom_df.empty:
         fig_zoom = go.Figure()
         
+        # Original demand
         fig_zoom.add_trace(go.Scatter(
             x=zoom_df[DATETIME_COL], y=zoom_df['ercot_demand_mw'],
             mode='lines+markers', name='Original Demand',
             line=dict(color='#E74C3C', width=2), marker=dict(size=4, color='#E74C3C')
         ))
         
+        # Adjusted demand (with rebound if enabled)
         fig_zoom.add_trace(go.Scatter(
             x=zoom_df[DATETIME_COL], y=zoom_df['adjusted_demand_mw'],
             mode='lines+markers', name='After Grid Saver',
             line=dict(color='#2ECC71', width=2), marker=dict(size=4, color='#2ECC71'),
-            fill='tonexty', fillcolor='rgba(46, 204, 113, 0.15)'
+            fill='tonexty' if apply_intervention_flag else None,
+            fillcolor='rgba(46, 204, 113, 0.15)'
         ))
         
+        # Add SPA zones and drop lines if intervention enabled
         if apply_intervention_flag:
             zoom_spa = zoom_df[zoom_df['spa_action_triggered'] == True]
             for _, row in zoom_spa.iterrows():
+                # Drop lines
                 fig_zoom.add_trace(go.Scatter(
                     x=[row[DATETIME_COL], row[DATETIME_COL]],
                     y=[row['ercot_demand_mw'], row['adjusted_demand_mw']],
                     mode='lines', line=dict(color='#F39C12', width=2.5), showlegend=False,
                 ))
+                # Shaded zones
                 fig_zoom.add_vrect(
                     x0=row[DATETIME_COL], x1=row[DATETIME_COL] + pd.Timedelta(hours=1),
                     fillcolor='rgba(255, 165, 0, 0.25)', line_width=0, layer='below'
                 )
+            
+            # Rebound spikes
+            zoom_rebound = zoom_df[zoom_df['rebound_mw'] > 0]
+            if not zoom_rebound.empty:
+                fig_zoom.add_trace(go.Scatter(
+                    x=zoom_rebound[DATETIME_COL], y=zoom_rebound['adjusted_demand_mw'],
+                    mode='markers', name='⚠️ Rebound Spike',
+                    marker=dict(color='#E74C3C', size=10, symbol='triangle-up', line=dict(width=1, color='white')),
+                ))
         
+        # Peak line
         fig_zoom.add_trace(go.Scatter(
             x=[peak_time, peak_time], y=[zoom_df['ercot_demand_mw'].min(), zoom_df['ercot_demand_mw'].max()],
             mode='lines', name='Peak Moment', line=dict(color='#FFFFFF', width=2, dash='dash')
@@ -976,9 +1024,26 @@ with st.expander("🔍 Inspect Peak Demand Window (6 Hours Before and After Peak
             paper_bgcolor='#161B22', plot_bgcolor='#161B22',
             font=dict(color='white'), height=400,
             xaxis=dict(gridcolor='#30363D'), yaxis=dict(gridcolor='#30363D', title='Demand (MW)'),
+            legend=dict(bgcolor='#1A1A2E', bordercolor='#333')
         )
         st.plotly_chart(fig_zoom, width='stretch')
-
+        
+        # Stats
+        zoom_original_peak = zoom_df['ercot_demand_mw'].max()
+        zoom_adjusted_peak = zoom_df['adjusted_demand_mw'].max()
+        zoom_peak_reduction = zoom_original_peak - zoom_adjusted_peak
+        zoom_pct = (zoom_peak_reduction / zoom_original_peak * 100) if zoom_original_peak > 0 else 0
+        
+        st.markdown(f"""
+        <div class='info-box'>
+        🔍 <strong>Peak Window Statistics (±6 hours):</strong><br>
+        • Original peak in window: <strong style='color:#E74C3C'>{zoom_original_peak:,.0f} MW</strong><br>
+        • After intervention peak: <strong style='color:#2ECC71'>{zoom_adjusted_peak:,.0f} MW</strong><br>
+        • Peak reduction: <strong style='color:#F39C12'>{zoom_peak_reduction:,.2f} MW ({zoom_pct:.2f}%)</strong>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.warning("No data available in the ±6 hour peak window.")
 
 # ============================================================
 # IMPACT AT SCALE
@@ -1064,13 +1129,13 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 
 # ============================================================
-# REPORTS SECTION
+# REPORTS SECTION (with download button)
 # ============================================================
 with st.expander("📄 Reports and Insights (Download CSV)"):
     if live_mode:
-        st.warning("Reports are disabled in Live Mode. Switch to Analysis Mode.")
+        st.warning("📊 Reports are disabled in Live Mode. Switch to Analysis Mode to generate reports.")
     else:
-        st.markdown("*Select a time period to view grid performance analysis.*")
+        st.markdown("*Select a time period to view grid performance analysis and download a report.*")
         
         col_r1, col_r2 = st.columns(2)
         with col_r1:
@@ -1097,9 +1162,13 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
         if not df_report.empty:
             avg_vuln = df_report['vulnerability_score'].mean()
             peak_vuln = df_report['vulnerability_score'].max()
-            
-            # Locked SPA events
             spa_events_report = NOTEBOOK_SPA_ACTIONS
+            
+            # Metrics row
+            col_m1, col_m2, col_m3 = st.columns(3)
+            col_m1.metric("Avg Vulnerability", f"{avg_vuln:.1f}")
+            col_m2.metric("Peak Vulnerability", f"{peak_vuln:.1f}")
+            col_m3.metric("SPA Events (Validated)", f"{spa_events_report}")
             
             # Pie chart
             status_counts = df_report['grid_status'].value_counts()
@@ -1109,12 +1178,6 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
             )])
             fig_pie.update_layout(paper_bgcolor='#161B22', plot_bgcolor='#161B22',
                                   font=dict(color='white'), height=300)
-            
-            col_m1, col_m2, col_m3 = st.columns(3)
-            col_m1.metric("Avg Vulnerability", f"{avg_vuln:.1f}")
-            col_m2.metric("Peak Vulnerability", f"{peak_vuln:.1f}")
-            col_m3.metric("SPA Events (Validated)", f"{spa_events_report}")
-            
             st.plotly_chart(fig_pie, width='stretch')
             
             # Trend chart
@@ -1133,11 +1196,20 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
             
             st.info(f"📊 {period_label}: {spa_events_report} validated SPA events")
             
-            csv = df_report.to_csv(index=False)
-            st.download_button("📥 Download CSV", csv, f"GridSaver_{period_label.replace(' ', '_')}.csv")
+            # ✅ DOWNLOAD BUTTON - ADD THIS
+            try:
+                export_df = df_report.copy()
+                csv_data = export_df.to_csv(index=False)
+                st.download_button(
+                    "📥 Download Report (CSV)",
+                    data=csv_data,
+                    file_name=f"GridSaver_{period_label.replace(' ', '_')}.csv",
+                    key="report_download"
+                )
+            except Exception as e:
+                st.error(f"Export failed: {e}")
         else:
-            st.warning("No data for selected period.")
-
+            st.warning("No data available for selected period.")
 
 # ============================================================
 # FOOTER
