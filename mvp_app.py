@@ -1268,7 +1268,7 @@ arch = [
      "Coordinate residential HVAC load reduction",
      "3 to 5% targeted precision",
      "Pecan Street 868,096 records",
-     man-override safety protocol"),
+     "man-override safety protocol"),
 ]
 
 for col, icon, title, bg, color, l1, l2, l3, l4 in arch:
