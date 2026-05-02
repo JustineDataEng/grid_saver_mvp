@@ -37,14 +37,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# CONSTANTS — same as all three prototype notebooks
+# CONSTANTS
 # ============================================================
 CARBON_COL           = 'Carbon intensity gCO\u2082eq/kWh (direct)'
 CFE_COL              = 'Carbon-free energy percentage (CFE%)'
-DECISION_THRESHOLD   = 0.4      # Phase 2 XGBoost decision threshold
-REDUCTION_RATE       = 0.04     # 4% HVAC cycling — validated Phase 1 and Phase 3
-NUM_HOMES            = 25       # Pecan Street Austin TX 2018
-KW_PER_HOME          = 0.0920   # Derived from Phase 1 real data validation
+DECISION_THRESHOLD   = 0.4      
+REDUCTION_RATE       = 0.04     
+NUM_HOMES            = 25       
+KW_PER_HOME          = 0.0920   
 
 MONTH_NAMES = {
     1: 'January', 2: 'February', 3: 'March', 4: 'April',
@@ -55,26 +55,19 @@ DAY_NAMES = {
     0: 'Monday', 1: 'Tuesday', 2: 'Wednesday', 3: 'Thursday',
     4: 'Friday', 5: 'Saturday', 6: 'Sunday'
 }
-DATETIME_COL  = 'Datetime (UTC)'   # standardised column name used throughout
-ERCOT_PEAK_MW = 70000              # ERCOT peak demand reference (~70 GW)
+DATETIME_COL  = 'Datetime (UTC)'   
+ERCOT_PEAK_MW = 70000              
 month_order = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 # ============================================================
 # LOAD MODEL AND DATA
-# No retraining. No Google Drive. Local files only.
 # ============================================================
 @st.cache_resource
 def load_model():
-    """Load trained XGBoost model from repo."""
     return joblib.load("gridsaver_model.pkl")
 
 @st.cache_data
 def load_data():
-    """
-    Load processed ERCOT dataset from repo.
-    Derived output from prototype notebooks — not raw academic data.
-    Source: Electricity Maps US-TEX-ERCO 2025 (Academic Access).
-    """
     df = pd.read_csv("data_sample.csv")
     df['Datetime (UTC)'] = pd.to_datetime(df['Datetime (UTC)'])
     df = df.sort_values('Datetime (UTC)').reset_index(drop=True)
@@ -86,8 +79,6 @@ with st.spinner("Loading Grid Saver..."):
 
 # ============================================================
 # FEATURE ENGINEERING
-# Exact same function as Phase 2 and MVP notebook.
-# Must match training features — do not change.
 # ============================================================
 def engineer_features(df_input):
     df_fe = df_input.copy()
@@ -129,9 +120,6 @@ FEATURE_COLS = [
 
 # ============================================================
 # SENSE LAYER
-# Same formula and thresholds as Phase 1 prototype notebook.
-# Score range: 0 (cleanest) to 100 (most vulnerable)
-# Threshold: top 15% most vulnerable hours
 # ============================================================
 def sense_layer(df_input):
     df_s = df_input.copy()
@@ -162,43 +150,13 @@ def sense_layer(df_input):
 # PREDICT LAYER
 # ============================================================
 def predict_layer(df_input, model):
-    """
-    TRUE INDEPENDENT PREDICT LAYER — matches prototype architecture exactly.
-
-    Sense Layer:  ERCOT carbon + CFE signals  (independent source 1)
-    Predict Layer: PJM time-based demand patterns (independent source 2)
-
-    The Predict Layer uses ONLY temporal features derived from the datetime
-    column — hour, day of week, month, lag patterns, rolling stats.
-    It does NOT receive vulnerability_score, carbon, or CFE as inputs.
-    The two layers meet ONLY at the SPA decision point, never before.
-
-    Model trained on PJM Interconnection demand data (1998 to 2002).
-    Applied here using ERCOT timestamps to generate temporal risk projections.
-    PJM and ERCOT share the same grid demand seasonality patterns
-    (summer peaks, winter peaks, weekday/weekend cycles) making this
-    transfer valid for demonstration and early-stage validation.
-    """
     df_out = df_input.copy()
-
-    # Build time-only feature input — no vulnerability_score, no carbon, no CFE
-    # This preserves independence from the Sense Layer completely
-    # =================================================================
-    # NOTE FOR TECHNICAL AUDIT:
-    # demand_mw is a temporally constructed synthetic signal.
-    # It uses a 35,000 MW PJM baseline adjusted by hour and season
-    # to activate the trained XGBoost model.
-    # It is NOT real-time live demand data.
-    # In production, this is replaced with a live SCADA demand feed.
-    # =================================================================
-    pjm_avg_demand = 35000  # approximate mean PJM demand (MW) for scaling
+    pjm_avg_demand = 35000 
     time_features = pd.DataFrame({
         'datetime':  df_input['Datetime (UTC)'],
         'demand_mw': pjm_avg_demand + (
-            # Seasonal scaling using month only — no Sense Layer data
             np.where(df_input['Datetime (UTC)'].dt.month.isin([6, 7, 8]), 5000,
             np.where(df_input['Datetime (UTC)'].dt.month.isin([12, 1, 2]), 3000, 0))
-            # Peak hour scaling using hour only — no Sense Layer data
             + np.where(df_input['Datetime (UTC)'].dt.hour.between(15, 20), 2000,
               np.where(df_input['Datetime (UTC)'].dt.hour.between(6, 9), 1000, -500))
         )
@@ -223,7 +181,6 @@ def predict_layer(df_input, model):
     df_engineered['hour']       = df_engineered['datetime'].dt.hour
     df_engineered['month']      = df_engineered['datetime'].dt.month
 
-    # Average by hour and month — same as prototype Phase 2
     predict_by_hour_month = df_engineered.groupby(
         ['hour', 'month']
     )['vuln_proba'].mean().reset_index()
@@ -243,8 +200,6 @@ def predict_layer(df_input, model):
 
 # ============================================================
 # ACT LAYER
-# SPA dual-confirmation: Grid Saver only acts when BOTH
-# Sense AND Predict independently confirm vulnerability.
 # ============================================================
 def act_layer(df_input, reduction_rate, homes):
     df_a = df_input.copy()
@@ -252,8 +207,6 @@ def act_layer(df_input, reduction_rate, homes):
     df_a['spa_action_triggered'] = (
         df_a['sense_triggered'] & df_a['predict_triggered']
     )
-    if reduction_rate != 4:
-        pass  # Scaling disclaimer shown in UI below
     scaled_kw_per_home = KW_PER_HOME * (reduction_rate / 4)
     df_a['grid_saver_reduction_kw'] = np.where(
         df_a['spa_action_triggered'],
@@ -266,54 +219,28 @@ def act_layer(df_input, reduction_rate, homes):
 
 # ============================================================
 # IMPACT AND DISPATCH CALCULATIONS
-# Used by the Recommendation Engine below.
 # ============================================================
 def compute_impact_metrics(row, homes, reduction_rate):
-    """
-    Computes energy, cost and CO2 impact per SPA event.
-    Assumes 1-hour intervention window per event.
-    Cost baseline: $100/MWh (conservative grid average).
-    CO2: derived from actual carbon intensity of current row.
-    """
     reduction_kw   = homes * KW_PER_HOME * (reduction_rate / 4)
     reduction_mw   = reduction_kw / 1000
-    mwh_saved      = reduction_mw * 1  # 1-hour intervention window
-    cost_savings   = mwh_saved * 100   # $100/MWh conservative baseline
-    carbon_intensity = row[CARBON_COL] # gCO2/kWh = kgCO2/MWh numerically
+    mwh_saved      = reduction_mw * 1 
+    cost_savings   = mwh_saved * 100  
+    carbon_intensity = row[CARBON_COL] 
     co2_avoided_tons = (carbon_intensity * mwh_saved) / 1000
     return mwh_saved, cost_savings, co2_avoided_tons
 
-
 def compute_dispatch_priority(row):
-    """
-    Scores grid urgency 0 to 100 for utility-style dispatch prioritisation.
-    Vulnerability score: 50% weight (0-100 -> 0-50)
-    Predicted risk probability: 30% weight (0-1 -> 0-30)
-    Carbon intensity: 20% weight capped at 20
-    """
     score  = row['vulnerability_score'] * 0.5
     score += row.get('vuln_probability', 0) * 30
     score += min(row[CARBON_COL] / 10, 20)
     return round(score, 1)
 
-
-# ============================================================
-# RISK DRIVERS
-# Thresholds match classify_status exactly.
-# CRITICAL >= 70, WARNING >= 40, STABLE < 40
-# ============================================================
 def get_risk_drivers(row, vulnerability_threshold, df_full):
-    """
-    Score decides the classification.
-    Carbon intensity and CFE explain why the score is where it is.
-    Thresholds are relative to actual data range — not arbitrary fixed values.
-    """
     drivers = []
     score  = row['vulnerability_score']
     carbon = row[CARBON_COL]
     cfe    = row[CFE_COL]
 
-    # Step 1 — classify using score only (matches sense_layer exactly)
     if score >= 70:
         drivers.append("🔴 Grid is in CRITICAL state — vulnerability score at 70 or above")
     elif score >= 40:
@@ -321,14 +248,11 @@ def get_risk_drivers(row, vulnerability_threshold, df_full):
     else:
         drivers.append("🟢 Grid is STABLE — vulnerability score below 40")
 
-    # Step 2 — explain using relative signal positioning
-    # Carbon intensity: position within actual observed range
     carbon_min = df_full[CARBON_COL].min()
     carbon_max = df_full[CARBON_COL].max()
     carbon_range = carbon_max - carbon_min if (carbon_max - carbon_min) != 0 else 1
     carbon_pct = (carbon - carbon_min) / carbon_range
 
-    # CFE: position within actual observed range
     cfe_max = df_full[CFE_COL].max()
     cfe_pct = cfe / cfe_max if cfe_max != 0 else 0
 
@@ -349,29 +273,35 @@ def get_risk_drivers(row, vulnerability_threshold, df_full):
     return drivers
 
 # ============================================================
-# RUN FULL SPA PIPELINE ON FULL DATASET
-# Act layer runs on full df so SPA counts are accurate.
+# RUN FULL SPA PIPELINE ON FULL DATASET (NOW CACHED FOR SPEED)
 # ============================================================
-df, VULNERABILITY_THRESHOLD = sense_layer(df)
-df['hour']       = df['Datetime (UTC)'].dt.hour
-df['month']      = df['Datetime (UTC)'].dt.month
-df['month_name'] = df['Datetime (UTC)'].dt.strftime('%b')
-df['date']       = df['Datetime (UTC)'].dt.date
-df['day_of_week']= df['Datetime (UTC)'].dt.dayofweek
-df['year']       = df['Datetime (UTC)'].dt.year
-df['week']       = df['Datetime (UTC)'].dt.isocalendar().week.astype(int)
-df = predict_layer(df, model)
+@st.cache_data
+def run_base_pipeline(df_raw, _ml_model):
+    """Caches Sense and Predict so XGBoost only runs ONCE at startup."""
+    df_base, thresh = sense_layer(df_raw)
+    df_base['hour']       = df_base['Datetime (UTC)'].dt.hour
+    df_base['month']      = df_base['Datetime (UTC)'].dt.month
+    df_base['month_name'] = df_base['Datetime (UTC)'].dt.strftime('%b')
+    df_base['date']       = df_base['Datetime (UTC)'].dt.date
+    df_base['day_of_week']= df_base['Datetime (UTC)'].dt.dayofweek
+    df_base['year']       = df_base['Datetime (UTC)'].dt.year
+    df_base['week']       = df_base['Datetime (UTC)'].dt.isocalendar().week.astype(int)
+    
+    df_base = predict_layer(df_base, _ml_model)
+    return df_base, thresh
 
-# Run act layer on full dataset for accurate SPA counts
+# 1. Load the heavy ML data from cache (Instant)
+df, VULNERABILITY_THRESHOLD = run_base_pipeline(df, model)
+
+# 2. Run Act layer (Recalculates instantly when sliders move)
 df_full, _ = act_layer(df, REDUCTION_RATE, NUM_HOMES)
+
 SENSE_TRIGGERS_TOTAL   = int(df_full['sense_triggered'].sum())
 PREDICT_TRIGGERS_TOTAL = int(df_full['predict_triggered'].sum())
 SPA_ACTIONS_TOTAL      = int(df_full['spa_action_triggered'].sum())
 
 # ============================================================
-# LOCKED BASELINE TRUTH METRICS — from MVP notebook outputs
-# These match the notebook exactly and do NOT change with sliders.
-# Sense triggers: 1,316 (15.0%) | Predict: 1,659 (18.9%) | SPA: 154 (1.8%)
+# LOCKED BASELINE TRUTH METRICS
 # ============================================================
 NOTEBOOK_SENSE_TRIGGERS   = 1316
 NOTEBOOK_PREDICT_TRIGGERS = 1659
@@ -422,15 +352,6 @@ with st.sidebar.expander("Dataset Information"):
 
     **Act Layer:** Pecan Street Inc. Austin TX 2018
     25 real households. 868,096 records. 56.3% HVAC share.
-
-    Note: Data is processed output derived from prototype
-    notebooks. Raw academic datasets are not stored here.
-
-    Predict Layer: XGBoost trained on PJM demand data (1998 to 2002).
-    24hr Risk Projection via temporal pattern-recognition.
-    Independent of Sense Layer — both meet only at SPA decision point.
-    Transparency: A synthetic demand baseline activates the model for MVP.
-    In production, a live SCADA feed replaces this baseline.
     """)
 
 st.sidebar.divider()
@@ -547,24 +468,32 @@ for i, driver in enumerate(drivers):
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
-# SECTION 3 — GRID DEMAND AND VULNERABILITY WINDOWS
+# SECTION 3 — GRID DEMAND AND VULNERABILITY WINDOWS (FIXED FOR SPEED)
 # ============================================================
 st.markdown("## Grid Demand and Vulnerability Windows")
 
 color_map  = {'STABLE': '#2ECC71', 'WARNING': '#F39C12', 'CRITICAL': '#E74C3C'}
 fig_demand = go.Figure()
 
+# Fast continuous background line
+fig_demand.add_trace(go.Scatter(
+    x=df_view['Datetime (UTC)'],
+    y=df_view['vulnerability_score'],
+    mode='lines',
+    line=dict(color='#555', width=1),
+    showlegend=False
+))
+
+# Overlay colored status dots (Vectorized and instant)
 for status in ['STABLE', 'WARNING', 'CRITICAL']:
     mask = df_view['grid_status'] == status
     if mask.any():
         fig_demand.add_trace(go.Scatter(
             x=df_view[mask]['Datetime (UTC)'],
             y=df_view[mask]['vulnerability_score'],
-            mode='markers+lines',
+            mode='markers',
             name=status,
-            marker=dict(color=color_map[status], size=3, opacity=0.8),
-            line=dict(color=color_map[status], width=0.8),
-            connectgaps=True,
+            marker=dict(color=color_map[status], size=4, opacity=0.9),
         ))
 
 fig_demand.add_hline(
@@ -765,7 +694,6 @@ mwh_saved, cost_savings, co2_avoided = compute_impact_metrics(
 )
 
 # Compute true SPA-aggregated impact across all triggered events in view
-# reduction_mw column is computed later in Section 6 so we calculate it here independently
 scaled_kw_per_home_recs = KW_PER_HOME * (reduction_rate_input / 4)
 if 'spa_action_triggered' in df_view.columns:
     spa_events_df = df_view[df_view['spa_action_triggered']].copy()
@@ -861,8 +789,6 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
 # SECTION 6 — GRID SAVER LOAD REDUCTION SIMULATION
-# Data-driven. Reduction only applied when SPA triggers.
-# Matches prototype Phase 3 logic exactly.
 # ============================================================
 st.markdown("## Grid Saver Load Reduction Simulation")
 
@@ -873,7 +799,6 @@ if reduction_rate_input != 4:
         f"not independently validated values."
     )
 
-# Trigger counts — show live counts in live mode, notebook truth in analysis mode
 if live_mode:
     display_sense   = int(df_view['sense_triggered'].sum()) if 'sense_triggered' in df_view.columns else 0
     display_predict = int(df_view['predict_triggered'].sum())
@@ -905,15 +830,7 @@ for col, val, sub, label, color in sim_cards:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ============================================================
 # DATA-DRIVEN PEAK REDUCTION CALCULATION
-# synthetic_demand_mw is the synthetic baseline signal.
-# Reduction applied ONLY during SPA-triggered hours.
-# Peak comparison uses the same timestamp (idxmax).
-# ============================================================
-# Synthetic demand baseline derived from temporal patterns (Predict Layer only)
-# Uses hour and month signals — NO vulnerability_score dependency
-# Preserves SPA independence: Sense and Predict remain separate until decision point
 df_view['synthetic_demand_mw'] = 35000 + (
     np.where(df_view['month'].isin([6, 7, 8]), 5000,
     np.where(df_view['month'].isin([12, 1, 2]), 3000, 0))
@@ -921,21 +838,12 @@ df_view['synthetic_demand_mw'] = 35000 + (
     np.where(df_view['hour'].between(15, 20), 2000,
     np.where(df_view['hour'].between(6, 9), 1000, -500))
 )
-
-# reduction_mw already created by act_layer — no recalculation needed
-# synthetic_demand_mw is the Predict Layer baseline
 df_view['adjusted_demand_mw'] = df_view['synthetic_demand_mw'] - df_view['reduction_mw']
 
-# ============================================================
-# CORRECT PEAK REDUCTION — same timestamp comparison
-# Find peak on the BEFORE signal, compare AFTER at same point
-# ============================================================
 # Global peak for chart reference
 peak_idx        = df_view['synthetic_demand_mw'].idxmax()
 peak_time       = df_view.loc[peak_idx, 'Datetime (UTC)']
 
-# Peak reduction: find the SPA-triggered hour with highest demand
-# This is where Grid Saver has the most impact
 spa_active_df = df_view[df_view['spa_action_triggered']].copy()
 if not spa_active_df.empty:
     spa_peak_idx      = spa_active_df['synthetic_demand_mw'].idxmax()
@@ -952,9 +860,6 @@ else:
 total_mw_removed  = df_view['reduction_mw'].sum()
 spa_view_count    = int(df_view['spa_action_triggered'].sum())
 
-# ============================================================
-# TOTAL LOAD REMOVED HEADLINE
-# ============================================================
 st.markdown(f"""
 <div style='background:#161B22; border-left:5px solid #2ECC71;
      padding:15px; border-radius:8px; margin-bottom:15px;'>
@@ -969,7 +874,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Peak reduction summary cards
 col_p1, col_p2, col_p3, col_p4 = st.columns(4)
 peak_cards = [
     (col_p1, f"{original_peak:,.0f} MW",      "Original Peak",          "white"),
@@ -991,16 +895,13 @@ st.markdown(
     f"Peak insight: Original {original_peak:,.0f} MW reduced to {after_peak:,.0f} MW "
     f"at peak demand timestamp. Load shed: {peak_reduction_mw:,.2f} MW ({pct_reduction:.2f}%). "
     f"Validated at 4% HVAC reduction (0.0920 kW per home). "
-    f"Reduction occurs only during dual-confirmed SPA events — not continuously — "
-    f"ensuring targeted intervention without unnecessary load disruption."
+    f"Reduction occurs only during dual-confirmed SPA events — not continuously."
     f"</p>",
     unsafe_allow_html=True
 )
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ============================================================
-# BEFORE PLOT (top) — Original demand proxy with SPA markers
-# ============================================================
+# BEFORE PLOT
 fig_before = go.Figure()
 fig_before.add_trace(go.Scatter(
     x=df_view['Datetime (UTC)'],
@@ -1016,7 +917,6 @@ fig_before.add_trace(go.Scatter(
     name='SPA Action Triggered',
     marker=dict(color='#F39C12', size=6, symbol='circle'),
 ))
-# Mark peak timestamp
 fig_before.add_trace(go.Scatter(
     x=[peak_time, peak_time],
     y=[df_view['synthetic_demand_mw'].min(), df_view['synthetic_demand_mw'].max()],
@@ -1036,13 +936,8 @@ fig_before.update_layout(
 )
 st.plotly_chart(fig_before, use_container_width=True)
 
-# ============================================================
-# AFTER PLOT (below) — Adjusted demand with shaded SPA zones
-# and top 20 drop lines by reduction magnitude
-# ============================================================
+# AFTER PLOT
 fig_after = go.Figure()
-
-# Original demand (faded reference)
 fig_after.add_trace(go.Scatter(
     x=df_view['Datetime (UTC)'],
     y=df_view['synthetic_demand_mw'],
@@ -1051,8 +946,6 @@ fig_after.add_trace(go.Scatter(
     line=dict(color='#E74C3C', width=1, dash='dot'),
     opacity=0.35,
 ))
-
-# Adjusted demand after intervention
 fig_after.add_trace(go.Scatter(
     x=df_view['Datetime (UTC)'],
     y=df_view['adjusted_demand_mw'],
@@ -1062,10 +955,6 @@ fig_after.add_trace(go.Scatter(
     fill='tonexty',
     fillcolor='rgba(46, 204, 113, 0.08)'
 ))
-
-
-
-# Mark peak timestamp
 fig_after.add_trace(go.Scatter(
     x=[peak_time, peak_time],
     y=[df_view['synthetic_demand_mw'].min(), df_view['synthetic_demand_mw'].max()],
@@ -1074,7 +963,6 @@ fig_after.add_trace(go.Scatter(
     line=dict(color='#FFFFFF', width=1.5, dash='dash'),
     showlegend=False
 ))
-
 fig_after.update_layout(
     paper_bgcolor='#161B22', plot_bgcolor='#161B22',
     font=dict(color='white'),
@@ -1089,20 +977,7 @@ fig_after.update_layout(
 )
 st.plotly_chart(fig_after, use_container_width=True)
 
-st.markdown(
-    "<p style='color:#555; font-size:0.78rem; margin-top:4px;'>"
-    "Showing top 20 highest-impact Grid Saver interventions. Shaded zones mark all SPA-triggered windows. "
-    "Drop lines show top 20 highest-impact events. "
-    "Peak window view below shows full detail at peak demand."
-    "</p>",
-    unsafe_allow_html=True
-)
-
-st.write("🔥 REACHED SECTION 6")
-# ============================================================
-# PEAK ZOOM WINDOW — ±6 hours around peak demand
-# Shows all drop lines and full detail at the critical moment
-# ============================================================
+# ZOOM PLOT
 st.markdown("#### Peak Demand Window (6 Hours Before and After Peak)")
 zoom_df = df_view[
     (df_view['Datetime (UTC)'] >= peak_time - pd.Timedelta(hours=6)) &
@@ -1127,7 +1002,6 @@ if not zoom_df.empty:
         fill='tonexty',
         fillcolor='rgba(46, 204, 113, 0.15)'
     ))
-  
     fig_zoom.add_trace(go.Scatter(
         x=[peak_time, peak_time],
         y=[zoom_df['synthetic_demand_mw'].min(), zoom_df['synthetic_demand_mw'].max()],
@@ -1136,7 +1010,6 @@ if not zoom_df.empty:
         line=dict(color='#FFFFFF', width=1.5, dash='dash'),
         showlegend=False
     ))
-    
     fig_zoom.update_layout(
         paper_bgcolor='#161B22', plot_bgcolor='#161B22',
         font=dict(color='white'),
@@ -1203,7 +1076,6 @@ st.markdown(
     f"</p>",
     unsafe_allow_html=True
 )
-
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
@@ -1227,7 +1099,7 @@ arch = [
      "Coordinate residential HVAC load reduction",
      "3 to 5% targeted precision",
      "Pecan Street 868,096 records",
-     "man-override safety protocol"),
+     "Human-override safety protocol"),
 ]
 
 for col, icon, title, bg, color, l1, l2, l3, l4 in arch:
@@ -1236,7 +1108,7 @@ for col, icon, title, bg, color, l1, l2, l3, l4 in arch:
         <div style='background: {bg}22; border: 1px solid {color};
              padding: 20px; border-radius: 10px; text-align: center;
              border-top: 4px solid {color};'>
-            <h2 style='color: {color}; font-se: 2rem; margin: 0;'>{icon}</h2>
+            <h2 style='color: {color}; font-size: 2rem; margin: 0;'>{icon}</h2>
             <h3 style='color: {color}; margin: 10px 0 5px 0;'>{title}</h3>
             <p style='color: #888; font-size: 0.85rem; margin: 0;'>
                 {l1}<br>{l2}<br>{l3}<br>{l4}
@@ -1247,205 +1119,14 @@ for col, icon, title, bg, color, l1, l2, l3, l4 in arch:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
-# SECTION 9 — REPORTS AND INSIGHTS (HARDENED)
-# ============================================================
-
-st.markdown("## Reports and Insights")
-
-# Debug toggle (very useful during development)
-debug_mode = st.sidebar.checkbox("Enable Debug Mode", value=False)
-
-def debug_log(msg):
-    if debug_mode:
-        st.write("DEBUG:", msg)
-
-# -------------------------------
-# MODE CHECK
-# -------------------------------
-if live_mode:
-    st.warning("Reports are disabled in Live Mode. Switch to Analysis Mode.")
-    st.stop()
-
-st.markdown("*Select a time period to view grid performance analysis and download a report.*")
-
-# -------------------------------
-# DATA VALIDATION (Sense QA Layer)
-# -------------------------------
-if df is None or df.empty:
-    st.error("Dataset not loaded or empty.")
-    st.stop()
-
-required_base_cols = ['Datetime (UTC)', 'year']
-missing_base = [c for c in required_base_cols if c not in df.columns]
-
-if missing_base:
-    st.error(f"Missing required columns: {missing_base}")
-    st.stop()
-
-# Ensure datetime is correct
-df['Datetime (UTC)'] = pd.to_datetime(df['Datetime (UTC)'], errors='coerce')
-
-# -------------------------------
-# FILTER SELECTION
-# -------------------------------
-col_r1, col_r2, col_r3 = st.columns(3)
-
-with col_r1:
-    report_type = st.selectbox("Report Type", ["Yearly", "Monthly", "Weekly"])
-
-with col_r2:
-    report_year = st.selectbox("Year", sorted(df['year'].unique(), reverse=True))
-
-with col_r3:
-    report_month, report_week = None, None
-
-    if report_type == "Monthly":
-        if 'month' not in df.columns:
-            st.error("Month column missing.")
-            st.stop()
-
-        available_months = sorted(df[df['year'] == report_year]['month'].unique())
-        month_display = [MONTH_NAMES[m] for m in available_months]
-
-        selected_month_name = st.selectbox("Month", month_display)
-        report_month = [k for k, v in MONTH_NAMES.items() if v == selected_month_name][0]
-
-    elif report_type == "Weekly":
-        if 'week' not in df.columns:
-            st.error("Week column missing.")
-            st.stop()
-
-        available_weeks = sorted(df[df['year'] == report_year]['week'].unique())
-        report_week = st.selectbox("Week", available_weeks)
-
-# -------------------------------
-# FILTER DATA
-# -------------------------------
-try:
-    if report_type == "Yearly":
-        df_report = df[df['year'] == report_year].copy()
-        period_label = f"{report_year}"
-
-    elif report_type == "Monthly":
-        df_report = df[(df['year'] == report_year) & (df['month'] == report_month)].copy()
-        period_label = f"{MONTH_NAMES[report_month]} {report_year}"
-
-    else:
-        df_report = df[(df['year'] == report_year) & (df['week'] == report_week)].copy()
-        period_label = f"Week {report_week}, {report_year}"
-
-except Exception as e:
-    st.error(f"Filtering failed: {e}")
-    st.stop()
-
-if df_report.empty:
-    st.warning("No data available for selected period.")
-    st.stop()
-
-debug_log(f"Filtered rows: {len(df_report)}")
-
-# -------------------------------
-# REQUIRED ANALYSIS COLUMNS CHECK
-# -------------------------------
-required_cols = ['vulnerability_score', 'grid_status']
-missing_cols = [c for c in required_cols if c not in df_report.columns]
-
-if missing_cols:
-    st.error(f"Missing analysis columns: {missing_cols}")
-    st.stop()
-
-# Clean NaNs
-df_report = df_report.dropna(subset=['vulnerability_score'])
-
-# -------------------------------
-# METRICS
-# -------------------------------
-avg_vulnerability  = df_report['vulnerability_score'].mean()
-peak_vulnerability = df_report['vulnerability_score'].max()
-low_vulnerability  = df_report['vulnerability_score'].min()
-
-high_risk_events = int((df_report['vulnerability_score'] >= 70).sum())
-warning_events   = int(((df_report['vulnerability_score'] >= 40) & (df_report['vulnerability_score'] < 70)).sum())
-stable_hours     = int((df_report['vulnerability_score'] < 40).sum())
-
-# -------------------------------
-# ACT LAYER (SAFE EXECUTION)
-# -------------------------------
-try:
-    spa_report_df, _ = act_layer(df_report, REDUCTION_RATE, NUM_HOMES)
-
-    spa_events_report = int(spa_report_df['spa_action_triggered'].sum())
-    total_mwh_report  = spa_report_df['reduction_mw'].sum()
-
-    if CARBON_COL in spa_report_df.columns:
-        total_co2_report = (spa_report_df[CARBON_COL] * spa_report_df['reduction_mw']).sum() / 1000
-    else:
-        total_co2_report = 0
-
-except Exception as e:
-    st.error(f"Act layer failed: {e}")
-    debug_log(spa_report_df.head() if 'spa_report_df' in locals() else "No SPA DF")
-    st.stop()
-
-# -------------------------------
-# DISPLAY METRICS
-# -------------------------------
-st.markdown(f"**Showing: {period_label}** — {len(df_report):,} hours analysed")
-
-col1, col2, col3 = st.columns(3)
-col1.metric("Avg Vulnerability", f"{avg_vulnerability:.1f}")
-col2.metric("Peak", f"{peak_vulnerability:.1f}")
-col3.metric("SPA Actions", f"{spa_events_report:,}")
-
-# -------------------------------
-# CHART (SAFE)
-# -------------------------------
-try:
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=df_report['Datetime (UTC)'],
-        y=df_report['vulnerability_score'],
-        mode='lines'
-    ))
-    st.plotly_chart(fig, use_container_width=True)
-
-except Exception as e:
-    st.error(f"Chart failed: {e}")
-
-# -------------------------------
-# INSIGHT SUMMARY
-# -------------------------------
-insight = f"Average vulnerability: {avg_vulnerability:.1f}/100. "
-
-if spa_events_report > 0:
-    insight += f"{spa_events_report} interventions triggered, saving {total_mwh_report:.2f} MWh."
-else:
-    insight += "No interventions triggered."
-
-st.info(insight)
-
-# -------------------------------
-# EXPORT (SAFE)
-# -------------------------------
-try:
-    export_df = spa_report_df.copy()
-    csv_data = export_df.to_csv(index=False)
-
-    st.download_button(
-        "Download Report",
-        data=csv_data,
-        file_name=f"GridSaver_{period_label}.csv"
-    )
-# ============================================================
-# SECTION 9 — REPORTS AND INSIGHTS (HARDENED)
+# SECTION 9 — REPORTS AND INSIGHTS (CLEANED)
 # ============================================================
 st.markdown("## Reports and Insights")
 
 if live_mode:
-    # If the user is in 24hr view, just show a message. Do NOT use st.stop()
+    # Safely bypass report processing during live mode without crashing the footer
     st.info("📊 Reports are disabled in Recent Window View. Toggle 'Recent Window View' off in the sidebar to run full historical reports.")
 else:
-    # Only run the report engine if we are in Analysis Mode
     st.markdown("*Select a time period to view grid performance analysis and download a report.*")
 
     col_r1, col_r2, col_r3 = st.columns(3)
@@ -1467,7 +1148,7 @@ else:
             available_weeks = sorted(df[df['year'] == report_year]['week'].unique())
             report_week = st.selectbox("Week", available_weeks)
 
-    # 1. Filter Data safely
+    # 1. Filter Data
     if report_type == "Yearly":
         df_report = df[df['year'] == report_year].copy()
         period_label = f"{report_year}"
@@ -1478,11 +1159,11 @@ else:
         df_report = df[(df['year'] == report_year) & (df['week'] == report_week)].copy()
         period_label = f"Week {report_week}, {report_year}"
 
-    # 2. Display Report Safely
+    # 2. Render Data Safely
     if df_report.empty:
         st.warning(f"No data available for {period_label}.")
     else:
-        # Run ACT layer safely
+        # Pass slider info directly to the isolated Act layer for this report
         spa_report_df, _ = act_layer(df_report, reduction_rate_input, homes)
 
         avg_vulnerability  = spa_report_df['vulnerability_score'].mean()
@@ -1492,14 +1173,14 @@ else:
 
         st.markdown(f"**Showing: {period_label}** — {len(df_report):,} hours analysed")
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Avg Vulnerability", f"{avg_vulnerability:.1f}")
-        col2.metric("Peak Vulnerability", f"{peak_vulnerability:.1f}")
-        col3.metric("SPA Actions Triggered", f"{spa_events_report:,}")
+        col_m1, col_m2, col_m3 = st.columns(3)
+        col_m1.metric("Avg Vulnerability", f"{avg_vulnerability:.1f}")
+        col_m2.metric("Peak Vulnerability", f"{peak_vulnerability:.1f}")
+        col_m3.metric("SPA Actions Triggered", f"{spa_events_report:,}")
 
-        # Vectorized Plotly Chart (Super Fast)
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
+        # Instant Vectorized Graph
+        fig_report = go.Figure()
+        fig_report.add_trace(go.Scatter(
             x=spa_report_df['Datetime (UTC)'],
             y=spa_report_df['vulnerability_score'],
             mode='lines',
@@ -1508,7 +1189,7 @@ else:
             fill='tozeroy',
             fillcolor='rgba(74, 158, 255, 0.1)'
         ))
-        fig.update_layout(
+        fig_report.update_layout(
             paper_bgcolor='#161B22', plot_bgcolor='#161B22',
             font=dict(color='white'),
             title=dict(text=f'Vulnerability Trend — {period_label}', font=dict(color='white', size=13)),
@@ -1516,7 +1197,7 @@ else:
             yaxis=dict(gridcolor='#30363D', range=[0, 100]),
             height=300, margin=dict(t=40, b=20)
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig_report, use_container_width=True)
 
         # Insight Summary
         insight = f"Average vulnerability for the period was {avg_vulnerability:.1f}/100. "
@@ -1526,10 +1207,10 @@ else:
             insight += "The grid remained relatively stable; no automated interventions were required."
         st.info(insight)
 
-        # Export
+        # Export CSV
         csv_data = spa_report_df.to_csv(index=False)
         st.download_button(
-            "Download Phase Report (CSV)",
+            "Download Report (CSV)",
             data=csv_data,
             file_name=f"GridSaver_Report_{period_label.replace(' ', '_')}.csv"
         )
@@ -1554,4 +1235,3 @@ st.markdown("""
     </p>
 </div>
 """, unsafe_allow_html=True)
-        
