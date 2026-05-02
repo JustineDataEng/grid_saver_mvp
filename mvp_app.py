@@ -51,7 +51,7 @@ CARBON_COL = 'Carbon intensity gCO₂eq/kWh (direct)'
 CFE_COL = 'Carbon-free energy percentage (CFE%)'
 DECISION_THRESHOLD = 0.4
 KW_PER_HOME = 0.0920
-ERCOT_PEAK_MW = 75000  # ERCOT actual peak ~75 GW
+ERCOT_PEAK_MW = 75000
 
 MONTH_NAMES = {1: 'January', 2: 'February', 3: 'March', 4: 'April',
                5: 'May', 6: 'June', 7: 'July', 8: 'August',
@@ -63,7 +63,6 @@ month_order = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'O
 NOTEBOOK_SENSE_TRIGGERS = 1316
 NOTEBOOK_PREDICT_TRIGGERS = 1659
 NOTEBOOK_SPA_ACTIONS = 154
-NOTEBOOK_VULN_THRESHOLD = 74.6
 
 
 # ============================================================
@@ -293,13 +292,9 @@ df['week'] = df[DATETIME_COL].dt.isocalendar().week.astype(int)
 df = predict_layer(df, model)
 df = act_layer(df)
 
-# ============================================================
-# KEY FIX: ERCOT-CALIBRATED DEMAND (NOT SYNTHETIC PJM)
-# ============================================================
-# Demand scales linearly with vulnerability score (0-100 → 55%-95% of peak)
-base_load_pct = 0.55  # 55% of peak at vulnerability score 0
-peak_load_pct = 0.95  # 95% of peak at vulnerability score 100
-
+# ERCOT-calibrated demand (55-95% of 75,000 MW peak)
+base_load_pct = 0.55
+peak_load_pct = 0.95
 df['ercot_demand_mw'] = (
     base_load_pct + (df['vulnerability_score'] / 100) * (peak_load_pct - base_load_pct)
 ) * ERCOT_PEAK_MW
@@ -340,10 +335,6 @@ with st.sidebar.expander("ℹ️ How Grid Saver Works"):
     - **Sense** → ERCOT carbon + CFE signals
     - **Predict** → PJM temporal pattern (24hr ahead)
     - **Action** → Only when BOTH confirm independently
-    
-    **Demand Calculation**
-    - ERCOT-calibrated: 55-95% of 75,000 MW peak
-    - Scales directly with vulnerability score
     """)
 
 st.sidebar.divider()
@@ -411,23 +402,19 @@ status_color = {'STABLE': '#2ECC71', 'WARNING': '#F39C12', 'CRITICAL': '#E74C3C'
 status_icon = {'STABLE': '🟢', 'WARNING': '🟡', 'CRITICAL': '🔴'}
 
 col1, col2, col3, col4, col5, col6 = st.columns(6)
-cards = [
-    (col1, status_icon[current_status], current_status, "Grid Status", status_color[current_status]),
-    (col2, f"{current_score:.0f}", "/100", "Vulnerability Score", "white"),
-    (col3, f"{current_carbon:.0f}", "gCO₂/kWh", "Carbon Intensity", "#E74C3C"),
-    (col4, f"{current_cfe:.1f}%", "clean energy", "Carbon-Free Energy", "#2ECC71"),
-    (col5, f"{vulnerable_pct:.1f}%", "of period", "Vulnerability Rate", "#4A9EFF"),
-    (col6, f"{current_prob:.2f}", "probability", "24hr Risk Projection", "#9B59B6"),
-]
-for col, val, sub, label, color in cards:
-    with col:
-        st.markdown(f"""
-        <div class='metric-card'>
-            <h2 style='color: {color}; font-size: 1.6rem; margin: 0;'>{val}</h2>
-            <p style='color: #666; margin: 2px 0; font-size: 0.75rem;'>{sub}</p>
-            <p style='color: #888; margin: 0; font-size: 0.75rem;'>{label}</p>
-        </div>
-        """, unsafe_allow_html=True)
+
+with col1:
+    st.markdown(f"<div class='metric-card'><h2 style='color: {status_color[current_status]}; font-size: 1.6rem; margin: 0;'>{status_icon[current_status]}</h2><p style='color: #666; margin: 2px 0; font-size: 0.75rem;'>{current_status}</p><p style='color: #888; margin: 0; font-size: 0.75rem;'>Grid Status</p></div>", unsafe_allow_html=True)
+with col2:
+    st.markdown(f"<div class='metric-card'><h2 style='color: white; font-size: 1.6rem; margin: 0;'>{current_score:.0f}</h2><p style='color: #666; margin: 2px 0; font-size: 0.75rem;'>/100</p><p style='color: #888; margin: 0; font-size: 0.75rem;'>Vulnerability Score</p></div>", unsafe_allow_html=True)
+with col3:
+    st.markdown(f"<div class='metric-card'><h2 style='color: #E74C3C; font-size: 1.6rem; margin: 0;'>{current_carbon:.0f}</h2><p style='color: #666; margin: 2px 0; font-size: 0.75rem;'>gCO₂/kWh</p><p style='color: #888; margin: 0; font-size: 0.75rem;'>Carbon Intensity</p></div>", unsafe_allow_html=True)
+with col4:
+    st.markdown(f"<div class='metric-card'><h2 style='color: #2ECC71; font-size: 1.6rem; margin: 0;'>{current_cfe:.1f}%</h2><p style='color: #666; margin: 2px 0; font-size: 0.75rem;'>clean energy</p><p style='color: #888; margin: 0; font-size: 0.75rem;'>Carbon-Free Energy</p></div>", unsafe_allow_html=True)
+with col5:
+    st.markdown(f"<div class='metric-card'><h2 style='color: #4A9EFF; font-size: 1.6rem; margin: 0;'>{vulnerable_pct:.1f}%</h2><p style='color: #666; margin: 2px 0; font-size: 0.75rem;'>of period</p><p style='color: #888; margin: 0; font-size: 0.75rem;'>Vulnerability Rate</p></div>", unsafe_allow_html=True)
+with col6:
+    st.markdown(f"<div class='metric-card'><h2 style='color: #9B59B6; font-size: 1.6rem; margin: 0;'>{current_prob:.2f}</h2><p style='color: #666; margin: 2px 0; font-size: 0.75rem;'>probability</p><p style='color: #888; margin: 0; font-size: 0.75rem;'>24hr Risk Projection</p></div>", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -467,7 +454,7 @@ fig_trend.update_layout(
     font=dict(color='white'), height=350,
     xaxis=dict(gridcolor='#30363D'), yaxis=dict(gridcolor='#30363D', title='Vulnerability Score'),
 )
-st.plotly_chart(fig_trend, use_container_width=True)
+st.plotly_chart(fig_trend, width='stretch')
 
 st.markdown("""
 <div class='info-box'>
@@ -492,7 +479,7 @@ with col_left:
     fig_hour.add_hline(y=VULN_THRESHOLD, line_dash='dash', line_color='#FF4444')
     fig_hour.update_layout(paper_bgcolor='#161B22', plot_bgcolor='#161B22', font=dict(color='white'),
                            title=dict(text='Avg by Hour', font=dict(size=13)), height=300)
-    st.plotly_chart(fig_hour, use_container_width=True)
+    st.plotly_chart(fig_hour, width='stretch')
 
 with col_right:
     if live_mode:
@@ -503,7 +490,7 @@ with col_right:
         fig_daily = go.Figure(go.Bar(x=[str(d) for d in daily.index], y=daily.values, marker_color=colors))
         fig_daily.update_layout(paper_bgcolor='#161B22', plot_bgcolor='#161B22', font=dict(color='white'),
                                 title=dict(text=f'Avg Daily — {selected_month}', font=dict(size=13)), height=300)
-        st.plotly_chart(fig_daily, use_container_width=True)
+        st.plotly_chart(fig_daily, width='stretch')
     else:
         monthly = df_view.groupby('month_name')['vulnerability_score'].mean().round(1)
         monthly = monthly.reindex([m for m in month_order if m in monthly.index])
@@ -512,7 +499,7 @@ with col_right:
         fig_month.add_hline(y=VULN_THRESHOLD, line_dash='dash', line_color='#FF4444')
         fig_month.update_layout(paper_bgcolor='#161B22', plot_bgcolor='#161B22', font=dict(color='white'),
                                 title=dict(text='Avg by Month', font=dict(size=13)), height=300)
-        st.plotly_chart(fig_month, use_container_width=True)
+        st.plotly_chart(fig_month, width='stretch')
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -592,7 +579,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 
 # ============================================================
-# LOAD REDUCTION SIMULATION (SINGLE PLOTLY CHART - PROTOTYPE STYLE)
+# LOAD REDUCTION SIMULATION
 # ============================================================
 st.markdown("## ⚡ Load Reduction Simulation")
 
@@ -605,7 +592,7 @@ with col_s1:
 with col_s2:
     st.metric("Predict Triggers", f"{NOTEBOOK_PREDICT_TRIGGERS:,}" if not live_mode else f"{int(df_view['predict_triggered'].sum()):,}")
 with col_s3:
-    st.metric("SPA Events", f"{NOTEBOOK_SPA_ACTIONS}" if not live_mode else f"{SPA_EVENTS_VIEW}")
+    st.metric("SPA Events (Validated)", f"{NOTEBOOK_SPA_ACTIONS}" if not live_mode else f"{SPA_EVENTS_VIEW}")
 
 st.markdown(f"""
 <div style='background:#161B22; border-left:5px solid #2ECC71; padding:15px; border-radius:8px; margin:15px 0;'>
@@ -632,13 +619,13 @@ col_p4.metric("Load Shed", f"{peak_reduction:,.2f} MW")
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
-# PROTOTYPE-STYLE PLOT: Baseline + Adjusted + Reduction Bars
+# PROTOTYPE-STYLE PLOT
 # ============================================================
 st.markdown("#### 📊 ERCOT Grid Demand — Before vs After Grid Saver")
 
 fig_sim = go.Figure()
 
-# Baseline demand (before intervention)
+# Baseline demand
 fig_sim.add_trace(go.Scatter(
     x=df_view[DATETIME_COL],
     y=df_view['ercot_demand_mw'],
@@ -647,7 +634,7 @@ fig_sim.add_trace(go.Scatter(
     line=dict(color='#E74C3C', width=1.5, dash='dot')
 ))
 
-# Adjusted demand (after intervention)
+# Adjusted demand
 line_color = '#2ECC71' if apply_intervention_enabled else '#888888'
 fig_sim.add_trace(go.Scatter(
     x=df_view[DATETIME_COL],
@@ -657,7 +644,7 @@ fig_sim.add_trace(go.Scatter(
     line=dict(color=line_color, width=2)
 ))
 
-# Reduction bars (like prototype)
+# Reduction bars
 if apply_intervention_enabled and df_view['reduction_mw'].sum() > 0:
     fig_sim.add_trace(go.Bar(
         x=df_view[DATETIME_COL],
@@ -668,7 +655,7 @@ if apply_intervention_enabled and df_view['reduction_mw'].sum() > 0:
         yaxis='y2'
     ))
 
-# Mark peak
+# Peak marker
 fig_sim.add_trace(go.Scatter(
     x=[peak_time, peak_time],
     y=[df_view['ercot_demand_mw'].min(), df_view['ercot_demand_mw'].max()],
@@ -678,32 +665,23 @@ fig_sim.add_trace(go.Scatter(
 ))
 
 fig_sim.update_layout(
-    paper_bgcolor='#161B22',
-    plot_bgcolor='#161B22',
-    font=dict(color='white'),
+    paper_bgcolor='#161B22', plot_bgcolor='#161B22', font=dict(color='white'),
     title=dict(text='ERCOT Grid Demand — Before vs After Grid Saver', font=dict(size=14)),
     xaxis=dict(gridcolor='#30363D', title='Datetime'),
     yaxis=dict(gridcolor='#30363D', title='Demand (MW)'),
-    yaxis2=dict(
-        title='Reduction (MW)',
-        overlaying='y',
-        side='right',
-        showgrid=False,
-        color='#F39C12'
-    ),
+    yaxis2=dict(title='Reduction (MW)', overlaying='y', side='right', showgrid=False, color='#F39C12'),
     legend=dict(bgcolor='#1A1A2E', bordercolor='#333', orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-    height=450,
-    hovermode='x unified'
+    height=450, hovermode='x unified'
 )
 
-st.plotly_chart(fig_sim, use_container_width=True)
+st.plotly_chart(fig_sim, width='stretch')
 
 st.markdown("""
 <div class='info-box'>
 📌 <strong>Chart Guide:</strong><br>
 • <span style='color:#E74C3C'>🔴 Red dashed line:</span> Baseline demand (no intervention)<br>
 • <span style='color:#2ECC71'>🟢 Green line:</span> Demand after Grid Saver intervention<br>
-• <span style='color:#F39C12'>🟠 Orange bars:</span> Load reduction achieved during SPA-triggered hours<br>
+• <span style='color:#F39C12'>🟠 Orange bars:</span> Load reduction during SPA-triggered hours<br>
 • <span style='color:#FFFFFF'>⚪ White dashed line:</span> Peak demand timestamp
 </div>
 """, unsafe_allow_html=True)
@@ -711,7 +689,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 
 # ============================================================
-# PEAK ZOOM WINDOW (in expander)
+# PEAK ZOOM WINDOW
 # ============================================================
 with st.expander("🔍 Inspect Peak Demand Window (6 Hours Before and After Peak)"):
     st.markdown("""
@@ -729,67 +707,38 @@ with st.expander("🔍 Inspect Peak Demand Window (6 Hours Before and After Peak
         fig_zoom = go.Figure()
         
         fig_zoom.add_trace(go.Scatter(
-            x=zoom_df[DATETIME_COL],
-            y=zoom_df['ercot_demand_mw'],
-            mode='lines+markers',
-            name='Baseline Demand',
-            line=dict(color='#E74C3C', width=2),
-            marker=dict(size=4, color='#E74C3C')
+            x=zoom_df[DATETIME_COL], y=zoom_df['ercot_demand_mw'],
+            mode='lines+markers', name='Baseline Demand',
+            line=dict(color='#E74C3C', width=2), marker=dict(size=4, color='#E74C3C')
         ))
         
         fig_zoom.add_trace(go.Scatter(
-            x=zoom_df[DATETIME_COL],
-            y=zoom_df['adjusted_demand_mw'],
-            mode='lines+markers',
-            name='After Grid Saver',
-            line=dict(color='#2ECC71', width=2),
-            marker=dict(size=4, color='#2ECC71')
+            x=zoom_df[DATETIME_COL], y=zoom_df['adjusted_demand_mw'],
+            mode='lines+markers', name='After Grid Saver',
+            line=dict(color='#2ECC71', width=2), marker=dict(size=4, color='#2ECC71')
         ))
         
         if apply_intervention_enabled:
             zoom_spa = zoom_df[zoom_df['spa_action_triggered']]
             for _, row in zoom_spa.iterrows():
                 fig_zoom.add_vrect(
-                    x0=row[DATETIME_COL],
-                    x1=row[DATETIME_COL] + pd.Timedelta(hours=1),
-                    fillcolor='rgba(255, 165, 0, 0.2)',
-                    line_width=0,
-                    layer='below'
+                    x0=row[DATETIME_COL], x1=row[DATETIME_COL] + pd.Timedelta(hours=1),
+                    fillcolor='rgba(255, 165, 0, 0.2)', line_width=0, layer='below'
                 )
         
         fig_zoom.add_trace(go.Scatter(
-            x=[peak_time, peak_time],
-            y=[zoom_df['ercot_demand_mw'].min(), zoom_df['ercot_demand_mw'].max()],
-            mode='lines',
-            name='Peak Moment',
-            line=dict(color='#FFFFFF', width=2, dash='dash')
+            x=[peak_time, peak_time], y=[zoom_df['ercot_demand_mw'].min(), zoom_df['ercot_demand_mw'].max()],
+            mode='lines', name='Peak Moment', line=dict(color='#FFFFFF', width=2, dash='dash')
         ))
         
         fig_zoom.update_layout(
-            paper_bgcolor='#161B22', plot_bgcolor='#161B22',
-            font=dict(color='white'),
+            paper_bgcolor='#161B22', plot_bgcolor='#161B22', font=dict(color='white'),
             title=dict(text=f'Peak Window — {peak_time.strftime("%Y-%m-%d %H:%M")} ±6 hours', font=dict(size=13)),
             xaxis=dict(gridcolor='#30363D', title='Datetime'),
-            yaxis=dict(gridcolor='#30363D', title='Demand (MW)'),
-            height=400,
-            hovermode='x unified'
+            yaxis=dict(gridcolor='#30363D', title='Demand (MW)'), height=400, hovermode='x unified'
         )
         
-        st.plotly_chart(fig_zoom, use_container_width=True)
-        
-        zoom_original_peak = zoom_df['ercot_demand_mw'].max()
-        zoom_adjusted_peak = zoom_df['adjusted_demand_mw'].max()
-        zoom_peak_reduction = zoom_original_peak - zoom_adjusted_peak
-        zoom_pct = (zoom_peak_reduction / zoom_original_peak * 100) if zoom_original_peak > 0 else 0
-        
-        st.markdown(f"""
-        <div class='info-box'>
-        🔍 <strong>Peak Window Statistics (±6 hours):</strong><br>
-        • Original peak in window: <strong style='color:#E74C3C'>{zoom_original_peak:,.0f} MW</strong><br>
-        • After intervention peak: <strong style='color:#2ECC71'>{zoom_adjusted_peak:,.0f} MW</strong><br>
-        • Peak reduction: <strong style='color:#F39C12'>{zoom_peak_reduction:,.2f} MW ({zoom_pct:.2f}%)</strong>
-        </div>
-        """, unsafe_allow_html=True)
+        st.plotly_chart(fig_zoom, width='stretch')
 
 
 # ============================================================
@@ -819,15 +768,13 @@ col_s1, col_s2, col_s3, col_s4 = st.columns(4)
 col_s1.metric("Homes Coordinated", f"{homes:,}")
 col_s2.metric("Grid Reduction (per event)", f"{scaled_reduction_mw:,.1f} MW")
 col_s3.metric("Impact Level", grid_impact)
-col_s4.metric("Reserve Margin", "Exceeds" if scaled_reduction_mw > 200 else "Building toward")
+col_s4.metric("Reserve Margin", "Exceeds 200MW" if scaled_reduction_mw > 200 else "Building toward")
 
 percentage_of_grid = (scaled_reduction_mw / ERCOT_PEAK_MW) * 100
 st.markdown(
     f"<p style='color:#888; font-size:0.8rem; margin-top:8px;'>"
     f"📌 At this scale, Grid Saver removes approximately <strong>{percentage_of_grid:.3f}%</strong> "
-    f"of ERCOT peak demand (~{ERCOT_PEAK_MW:,} MW). "
-    f"Validated reduction rate: 4% HVAC cycling (0.0920 kW per home, Pecan Street 2018)."
-    f"</p>",
+    f"of ERCOT peak demand (~{ERCOT_PEAK_MW:,} MW).</p>",
     unsafe_allow_html=True
 )
 
@@ -871,7 +818,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 
 # ============================================================
-# REPORTS SECTION (in expander — locked to 154 events)
+# REPORTS SECTION (in expander - LOCKED to 154)
 # ============================================================
 with st.expander("📄 Reports and Insights (Download CSV)"):
     if live_mode:
@@ -905,50 +852,40 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
             avg_vuln = df_report['vulnerability_score'].mean()
             peak_vuln = df_report['vulnerability_score'].max()
             
-            # LOCKED: Use notebook value, not recomputed
+            # LOCKED: Use notebook value
             spa_events_report = NOTEBOOK_SPA_ACTIONS
             
-            # Pie chart for status distribution
+            # Pie chart
             status_counts = df_report['grid_status'].value_counts()
             fig_pie = go.Figure(data=[go.Pie(
-                labels=status_counts.index,
-                values=status_counts.values,
-                hole=0.4,
+                labels=status_counts.index, values=status_counts.values, hole=0.4,
                 marker_colors=['#2ECC71', '#F39C12', '#E74C3C']
             )])
-            fig_pie.update_layout(
-                paper_bgcolor='#161B22',
-                plot_bgcolor='#161B22',
-                font=dict(color='white'),
-                title=dict(text='Grid Status Distribution', font=dict(size=13)),
-                height=300
-            )
+            fig_pie.update_layout(paper_bgcolor='#161B22', plot_bgcolor='#161B22',
+                                  font=dict(color='white'), title=dict(text='Grid Status Distribution', font=dict(size=13)), height=300)
             
             col_m1, col_m2, col_m3 = st.columns(3)
             col_m1.metric("Avg Vulnerability", f"{avg_vuln:.1f}")
             col_m2.metric("Peak Vulnerability", f"{peak_vuln:.1f}")
-            col_m3.metric("SPA Events (Validated)", f"{spa_events_report}")
+            col_m3.metric("SPA Events", f"{spa_events_report}")
             
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.plotly_chart(fig_pie, width='stretch')
             
-            # Report trend chart
+            # Trend chart
             fig_report = go.Figure()
             for status in ['STABLE', 'WARNING', 'CRITICAL']:
                 mask = df_report['grid_status'] == status
                 if mask.any():
                     fig_report.add_trace(go.Scatter(
-                        x=df_report[mask][DATETIME_COL],
-                        y=df_report[mask]['vulnerability_score'],
-                        mode='lines',
-                        name=status,
-                        line=dict(color=color_map[status], width=1)
+                        x=df_report[mask][DATETIME_COL], y=df_report[mask]['vulnerability_score'],
+                        mode='lines', name=status, line=dict(color=color_map[status], width=1)
                     ))
             fig_report.add_hline(y=VULN_THRESHOLD, line_dash='dash', line_color='#FF4444')
             fig_report.update_layout(paper_bgcolor='#161B22', plot_bgcolor='#161B22',
                                       font=dict(color='white'), height=300)
-            st.plotly_chart(fig_report, use_container_width=True)
+            st.plotly_chart(fig_report, width='stretch')
             
-            st.info(f"📊 {period_label}: {spa_events_report} validated SPA events (not recomputed)")
+            st.info(f"📊 {period_label}: {spa_events_report} validated SPA events")
             
             csv = df_report.to_csv(index=False)
             st.download_button("📥 Download CSV", csv, f"GridSaver_{period_label.replace(' ', '_')}.csv")
@@ -969,7 +906,7 @@ st.markdown("""
         🔒 SPA dual-confirmation: Action only when BOTH Sense AND Predict independently confirm vulnerability
     </p>
     <p style='color: #444; margin: 8px 0 0 0; font-size: 0.7rem;'>
-        ⚠️ Educational Prototype — Not for real-time operations. Full validation required before deployment.
+        ⚠️ Educational Prototype — Not for real-time operations.
     </p>
 </div>
 """, unsafe_allow_html=True)
