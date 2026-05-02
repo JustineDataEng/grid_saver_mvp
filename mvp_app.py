@@ -260,6 +260,7 @@ def act_layer(df_input, reduction_rate, homes):
         homes * scaled_kw_per_home,
         0
     )
+    df_a['reduction_mw'] = df_a['grid_saver_reduction_kw'] / 1000
     total_mw_saved = homes * scaled_kw_per_home / 1000
     return df_a, total_mw_saved
 
@@ -921,12 +922,8 @@ df_view['synthetic_demand_mw'] = 35000 + (
     np.where(df_view['hour'].between(6, 9), 1000, -500))
 )
 
-scaled_kw_per_home = KW_PER_HOME * (reduction_rate_input / 4)
-df_view['reduction_mw'] = np.where(
-    df_view['spa_action_triggered'],
-    (homes * scaled_kw_per_home) / 1000,
-    0
-)
+# reduction_mw already created by act_layer — no recalculation needed
+# synthetic_demand_mw is the Predict Layer baseline
 df_view['adjusted_demand_mw'] = df_view['synthetic_demand_mw'] - df_view['reduction_mw']
 
 # ============================================================
@@ -1008,7 +1005,7 @@ fig_before.add_trace(go.Scatter(
 ))
 # Mark peak timestamp
 fig_before.add_vline(
-    x=peak_time, line_dash='dash', line_color='#FFFFFF',
+    x=str(peak_time), line_dash='dash', line_color='#FFFFFF',
     annotation_text='Peak Demand', annotation_font_color='#FFFFFF'
 )
 fig_before.update_layout(
@@ -1079,7 +1076,7 @@ except Exception:
 
 # Mark peak timestamp
 fig_after.add_vline(
-    x=peak_time, line_dash='dash', line_color='#FFFFFF',
+    x=str(peak_time), line_dash='dash', line_color='#FFFFFF',
     annotation_text='Peak Demand', annotation_font_color='#FFFFFF'
 )
 
@@ -1153,7 +1150,7 @@ if not zoom_df.empty:
     except Exception:
         pass  # zoom drop lines rendering issue — continue
     fig_zoom.add_vline(
-        x=peak_time, line_dash='dash', line_color='#FFFFFF',
+        x=str(peak_time), line_dash='dash', line_color='#FFFFFF',
         annotation_text='Peak', annotation_font_color='#FFFFFF'
     )
     fig_zoom.update_layout(
