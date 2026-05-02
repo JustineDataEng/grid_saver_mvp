@@ -1063,33 +1063,7 @@ fig_after.add_trace(go.Scatter(
     fillcolor='rgba(46, 204, 113, 0.08)'
 ))
 
-# Shaded zones at ALL SPA-triggered hours (cheap to render)
-spa_triggered_df = df_view[df_view['spa_action_triggered']].copy()
-try:
-    for _, row in spa_triggered_df.iterrows():
-        fig_after.add_vrect(
-            x0=row['Datetime (UTC)'],
-            x1=row['Datetime (UTC)'] + pd.Timedelta(hours=1),
-            fillcolor='rgba(255, 165, 0, 0.15)',
-            line_width=0,
-        )
-except Exception:
-    pass  # vrect rendering issue — continue without shading
 
-# Drop lines — top 20 by reduction magnitude only (performance)
-MAX_LINES = 20
-try:
-    top_spa = spa_triggered_df.sort_values('reduction_mw', ascending=False).head(MAX_LINES)
-    for _, row in top_spa.iterrows():
-        fig_after.add_trace(go.Scatter(
-            x=[row['Datetime (UTC)'], row['Datetime (UTC)']],
-            y=[row['synthetic_demand_mw'], row['adjusted_demand_mw']],
-            mode='lines',
-            line=dict(color='#F39C12', width=2),
-            showlegend=False
-        ))
-except Exception:
-    pass  # drop lines rendering issue — continue without drop lines
 
 # Mark peak timestamp
 fig_after.add_trace(go.Scatter(
@@ -1153,24 +1127,7 @@ if not zoom_df.empty:
         fill='tonexty',
         fillcolor='rgba(46, 204, 113, 0.15)'
     ))
-    # All drop lines in zoom window
-    try:
-        for _, row in zoom_df[zoom_df['spa_action_triggered']].iterrows():
-            fig_zoom.add_trace(go.Scatter(
-                x=[row['Datetime (UTC)'], row['Datetime (UTC)']],
-                y=[row['synthetic_demand_mw'], row['adjusted_demand_mw']],
-                mode='lines',
-                line=dict(color='#F39C12', width=2.5),
-                showlegend=False
-            ))
-            fig_zoom.add_vrect(
-                x0=row['Datetime (UTC)'],
-                x1=row['Datetime (UTC)'] + pd.Timedelta(hours=1),
-                fillcolor='rgba(255, 165, 0, 0.2)',
-                line_width=0,
-            )
-    except Exception:
-        pass  # zoom drop lines rendering issue — continue
+  
     fig_zoom.add_trace(go.Scatter(
         x=[peak_time, peak_time],
         y=[zoom_df['synthetic_demand_mw'].min(), zoom_df['synthetic_demand_mw'].max()],
@@ -1179,6 +1136,7 @@ if not zoom_df.empty:
         line=dict(color='#FFFFFF', width=1.5, dash='dash'),
         showlegend=False
     ))
+    
     fig_zoom.update_layout(
         paper_bgcolor='#161B22', plot_bgcolor='#161B22',
         font=dict(color='white'),
