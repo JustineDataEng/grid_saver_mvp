@@ -1,12 +1,13 @@
 import os
+import warnings
+warnings.filterwarnings('ignore')
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import warnings
-warnings.filterwarnings('ignore')
 
 # Repo-relative base directory — works on Streamlit Cloud and locally
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
