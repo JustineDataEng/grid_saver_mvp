@@ -51,13 +51,19 @@ CARBON_COL = 'Carbon intensity gCO₂eq/kWh (direct)'
 CFE_COL = 'Carbon-free energy percentage (CFE%)'
 DECISION_THRESHOLD = 0.4
 KW_PER_HOME = 0.0920
+ERCOT_PEAK_MW = 75000  # ERCOT actual peak ~75 GW
 
 MONTH_NAMES = {1: 'January', 2: 'February', 3: 'March', 4: 'April',
                5: 'May', 6: 'June', 7: 'July', 8: 'August',
                9: 'September', 10: 'October', 11: 'November', 12: 'December'}
 DATETIME_COL = 'Datetime (UTC)'
-ERCOT_PEAK_MW = 70000
 month_order = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+# Locked notebook values
+NOTEBOOK_SENSE_TRIGGERS = 1316
+NOTEBOOK_PREDICT_TRIGGERS = 1659
+NOTEBOOK_SPA_ACTIONS = 154
+NOTEBOOK_VULN_THRESHOLD = 74.6
 
 
 # ============================================================
@@ -107,8 +113,7 @@ def apply_intervention(df, enabled, homes, reduction_rate_percent):
     df = df.copy()
     if not enabled:
         df['reduction_mw'] = 0
-        if 'synthetic_demand_mw' in df.columns:
-            df['adjusted_demand_mw'] = df['synthetic_demand_mw']
+        df['adjusted_demand_mw'] = df['ercot_demand_mw']
         return df
 
     reduction_kw = compute_scaled_reduction_kw(homes, reduction_rate_percent)
@@ -119,12 +124,7 @@ def apply_intervention(df, enabled, homes, reduction_rate_percent):
         reduction_mw_per_home,
         0
     )
-
-    if 'synthetic_demand_mw' in df.columns:
-        df['adjusted_demand_mw'] = df['synthetic_demand_mw'] - df['reduction_mw']
-    else:
-        df['adjusted_demand_mw'] = df.get('simulated_demand_mw', 0) - df['reduction_mw']
-
+    df['adjusted_demand_mw'] = df['ercot_demand_mw'] - df['reduction_mw']
     return df
 
 
@@ -293,17 +293,17 @@ df['week'] = df[DATETIME_COL].dt.isocalendar().week.astype(int)
 df = predict_layer(df, model)
 df = act_layer(df)
 
-# Synthetic demand baseline
-df['synthetic_demand_mw'] = 35000 + (
-    np.where(df['month'].isin([6, 7, 8]), 5000,
-    np.where(df['month'].isin([12, 1, 2]), 3000, 0))
-    +
-    np.where(df['hour'].between(15, 20), 2000,
-    np.where(df['hour'].between(6, 9), 1000, -500))
-)
+# ============================================================
+# KEY FIX: ERCOT-CALIBRATED DEMAND (NOT SYNTHETIC PJM)
+# ============================================================
+# Demand scales linearly with vulnerability score (0-100 → 55%-95% of peak)
+base_load_pct = 0.55  # 55% of peak at vulnerability score 0
+peak_load_pct = 0.95  # 95% of peak at vulnerability score 100
 
-NOTEBOOK_SENSE_TRIGGERS = 1316
-NOTEBOOK_PREDICT_TRIGGERS = 1659
+df['ercot_demand_mw'] = (
+    base_load_pct + (df['vulnerability_score'] / 100) * (peak_load_pct - base_load_pct)
+) * ERCOT_PEAK_MW
+
 FULL_YEAR_SPA_EVENTS = count_spa_events(df['spa_action_triggered'])
 
 
@@ -337,9 +337,13 @@ with st.sidebar.expander("ℹ️ How Grid Saver Works"):
     - **70-100: CRITICAL** — Action required
     
     **SPA Dual-Confirmation**
-    - **Sense** → ERCOT carbon + CFE
-    - **Predict** → PJM temporal pattern
-    - **Action** → Only when BOTH confirm
+    - **Sense** → ERCOT carbon + CFE signals
+    - **Predict** → PJM temporal pattern (24hr ahead)
+    - **Action** → Only when BOTH confirm independently
+    
+    **Demand Calculation**
+    - ERCOT-calibrated: 55-95% of 75,000 MW peak
+    - Scales directly with vulnerability score
     """)
 
 st.sidebar.divider()
@@ -588,7 +592,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 
 # ============================================================
-# LOAD REDUCTION SIMULATION (BEFORE/AFTER PLOTS)
+# LOAD REDUCTION SIMULATION (SINGLE PLOTLY CHART - PROTOTYPE STYLE)
 # ============================================================
 st.markdown("## ⚡ Load Reduction Simulation")
 
@@ -601,22 +605,21 @@ with col_s1:
 with col_s2:
     st.metric("Predict Triggers", f"{NOTEBOOK_PREDICT_TRIGGERS:,}" if not live_mode else f"{int(df_view['predict_triggered'].sum()):,}")
 with col_s3:
-    st.metric("SPA Events", f"{FULL_YEAR_SPA_EVENTS}" if not live_mode else f"{SPA_EVENTS_VIEW}")
+    st.metric("SPA Events", f"{NOTEBOOK_SPA_ACTIONS}" if not live_mode else f"{SPA_EVENTS_VIEW}")
 
 st.markdown(f"""
 <div style='background:#161B22; border-left:5px solid #2ECC71; padding:15px; border-radius:8px; margin:15px 0;'>
     <h3 style='color:#2ECC71; margin:0;'>⚡ Total Energy Removed: {TOTAL_MWH_REMOVED:,.2f} MWh</h3>
-    <p style='color:#888; margin:5px 0 0 0;'>Across {SPA_EVENTS_VIEW} SPA events | Full-year validated: {FULL_YEAR_SPA_EVENTS} events</p>
+    <p style='color:#888; margin:5px 0 0 0;'>Across {SPA_EVENTS_VIEW} SPA events | Full-year validated: {NOTEBOOK_SPA_ACTIONS} events</p>
+    <p style='color:#555; font-size:0.75rem; margin-top:5px;'>📌 Scenario output — scales with homes and reduction rate</p>
 </div>
 """, unsafe_allow_html=True)
 
 # Find peak
-demand_col = 'synthetic_demand_mw'
-adjusted_col = 'adjusted_demand_mw'
-peak_idx = df_view[demand_col].idxmax()
+peak_idx = df_view['ercot_demand_mw'].idxmax()
 peak_time = df_view.loc[peak_idx, DATETIME_COL]
-orig_peak = df_view.loc[peak_idx, demand_col]
-adj_peak = df_view.loc[peak_idx, adjusted_col]
+orig_peak = df_view.loc[peak_idx, 'ercot_demand_mw']
+adj_peak = df_view.loc[peak_idx, 'adjusted_demand_mw']
 peak_reduction = orig_peak - adj_peak
 pct_reduction = (peak_reduction / orig_peak * 100) if orig_peak > 0 else 0
 
@@ -628,147 +631,80 @@ col_p4.metric("Load Shed", f"{peak_reduction:,.2f} MW")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# BEFORE PLOT (with SPA markers)
-st.markdown("#### 📉 Before Grid Saver — Original Demand with SPA Markers")
+# ============================================================
+# PROTOTYPE-STYLE PLOT: Baseline + Adjusted + Reduction Bars
+# ============================================================
+st.markdown("#### 📊 ERCOT Grid Demand — Before vs After Grid Saver")
 
-fig_before = go.Figure()
+fig_sim = go.Figure()
 
-# Original demand line
-fig_before.add_trace(go.Scatter(
+# Baseline demand (before intervention)
+fig_sim.add_trace(go.Scatter(
     x=df_view[DATETIME_COL],
-    y=df_view[demand_col],
+    y=df_view['ercot_demand_mw'],
     mode='lines',
-    name='Original Demand (Proxy)',
-    line=dict(color='#E74C3C', width=1.5)
+    name='Baseline Demand',
+    line=dict(color='#E74C3C', width=1.5, dash='dot')
 ))
 
-# SPA markers on BEFORE chart (only if intervention enabled and SPA events exist)
-if apply_intervention_enabled:
-    spa_triggered = df_view[df_view['spa_action_triggered']]
-    if not spa_triggered.empty:
-        fig_before.add_trace(go.Scatter(
-            x=spa_triggered[DATETIME_COL],
-            y=spa_triggered[demand_col],
-            mode='markers',
-            name='SPA Action Triggered',
-            marker=dict(color='#F39C12', size=10, symbol='circle', line=dict(width=1.5, color='white'))
-        ))
+# Adjusted demand (after intervention)
+line_color = '#2ECC71' if apply_intervention_enabled else '#888888'
+fig_sim.add_trace(go.Scatter(
+    x=df_view[DATETIME_COL],
+    y=df_view['adjusted_demand_mw'],
+    mode='lines',
+    name='Adjusted Demand' if apply_intervention_enabled else 'Intervention Disabled',
+    line=dict(color=line_color, width=2)
+))
 
-# Mark peak timestamp (vertical dashed line)
-fig_before.add_trace(go.Scatter(
+# Reduction bars (like prototype)
+if apply_intervention_enabled and df_view['reduction_mw'].sum() > 0:
+    fig_sim.add_trace(go.Bar(
+        x=df_view[DATETIME_COL],
+        y=df_view['reduction_mw'],
+        name='Load Reduction',
+        marker_color='#F39C12',
+        opacity=0.4,
+        yaxis='y2'
+    ))
+
+# Mark peak
+fig_sim.add_trace(go.Scatter(
     x=[peak_time, peak_time],
-    y=[df_view[demand_col].min(), df_view[demand_col].max()],
+    y=[df_view['ercot_demand_mw'].min(), df_view['ercot_demand_mw'].max()],
     mode='lines',
     name='Peak Demand',
     line=dict(color='#FFFFFF', width=1.5, dash='dash')
 ))
 
-# Layout
-fig_before.update_layout(
+fig_sim.update_layout(
     paper_bgcolor='#161B22',
     plot_bgcolor='#161B22',
     font=dict(color='white'),
-    title=dict(text='Original Demand Profile with SPA Intervention Markers', font=dict(size=13)),
+    title=dict(text='ERCOT Grid Demand — Before vs After Grid Saver', font=dict(size=14)),
     xaxis=dict(gridcolor='#30363D', title='Datetime'),
     yaxis=dict(gridcolor='#30363D', title='Demand (MW)'),
-    legend=dict(bgcolor='#1A1A2E', bordercolor='#333'),
-    height=400,
+    yaxis2=dict(
+        title='Reduction (MW)',
+        overlaying='y',
+        side='right',
+        showgrid=False,
+        color='#F39C12'
+    ),
+    legend=dict(bgcolor='#1A1A2E', bordercolor='#333', orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+    height=450,
     hovermode='x unified'
 )
 
-st.plotly_chart(fig_before, use_container_width=True)
+st.plotly_chart(fig_sim, use_container_width=True)
 
-
-# AFTER PLOT (with shaded SPA zones + drop lines)
-st.markdown("#### 📈 After Grid Saver — Demand with Intervention Applied")
-
-fig_after = go.Figure()
-
-# Original demand (faded reference)
-fig_after.add_trace(go.Scatter(
-    x=df_view[DATETIME_COL],
-    y=df_view[demand_col],
-    mode='lines',
-    name='Original Demand (Reference)',
-    line=dict(color='#E74C3C', width=1, dash='dot'),
-    opacity=0.4
-))
-
-# Adjusted demand after intervention
-line_color = '#2ECC71' if apply_intervention_enabled else '#888888'
-fig_after.add_trace(go.Scatter(
-    x=df_view[DATETIME_COL],
-    y=df_view[adjusted_col],
-    mode='lines',
-    name='After Grid Saver Intervention' if apply_intervention_enabled else 'Intervention Disabled',
-    line=dict(color=line_color, width=2),
-    fill='tonexty' if apply_intervention_enabled else None,
-    fillcolor='rgba(46, 204, 113, 0.1)' if apply_intervention_enabled else None
-))
-
-# Shaded SPA zones and drop lines (only if intervention enabled)
-if apply_intervention_enabled:
-    spa_triggered = df_view[df_view['spa_action_triggered']].copy()
-    
-    # Shaded zones for ALL SPA-triggered hours
-    for _, row in spa_triggered.iterrows():
-        fig_after.add_vrect(
-            x0=row[DATETIME_COL],
-            x1=row[DATETIME_COL] + pd.Timedelta(hours=1),
-            fillcolor='rgba(255, 165, 0, 0.15)',
-            line_width=0,
-            layer='below',
-            annotation_text="SPA Window" if _ == spa_triggered.index[0] else None,
-            annotation_position="top left"
-        )
-    
-    # Drop lines — top 20 by reduction magnitude
-    if 'reduction_mw' in spa_triggered.columns:
-        top_spa = spa_triggered.sort_values('reduction_mw', ascending=False).head(20)
-        for _, row in top_spa.iterrows():
-            fig_after.add_trace(go.Scatter(
-                x=[row[DATETIME_COL], row[DATETIME_COL]],
-                y=[row[demand_col], row[adjusted_col]],
-                mode='lines',
-                line=dict(color='#F39C12', width=2.5),
-                showlegend=False,
-                hoverinfo='skip'
-            ))
-
-# Mark peak timestamp
-fig_after.add_trace(go.Scatter(
-    x=[peak_time, peak_time],
-    y=[df_view[demand_col].min(), df_view[demand_col].max()],
-    mode='lines',
-    name='Peak Demand',
-    line=dict(color='#FFFFFF', width=1.5, dash='dash'),
-    showlegend=True
-))
-
-# Layout
-fig_after.update_layout(
-    paper_bgcolor='#161B22',
-    plot_bgcolor='#161B22',
-    font=dict(color='white'),
-    title=dict(text='Demand Profile After Grid Saver Intervention', font=dict(size=13)),
-    xaxis=dict(gridcolor='#30363D', title='Datetime'),
-    yaxis=dict(gridcolor='#30363D', title='Demand (MW)'),
-    legend=dict(bgcolor='#1A1A2E', bordercolor='#333'),
-    height=400,
-    hovermode='x unified'
-)
-
-st.plotly_chart(fig_after, use_container_width=True)
-
-# Chart guide
 st.markdown("""
 <div class='info-box'>
 📌 <strong>Chart Guide:</strong><br>
-• <span style='color:#F39C12'>🟠 SPA markers (top chart):</span> Hours where SPA dual-confirmation triggered intervention<br>
-• <span style='color:#FFA500'>🟧 Shaded zones (bottom chart):</span> 1-hour SPA-triggered intervention windows<br>
-• <span style='color:#F39C12'>🟡 Orange drop lines:</span> Top 20 highest-impact interventions (before → after reduction)<br>
-• <span style='color:#FFFFFF'>⚪ Dashed white line:</span> Peak demand timestamp<br>
-• <span style='color:#2ECC71'>🟢 Green area:</span> Load reduction achieved during SPA events
+• <span style='color:#E74C3C'>🔴 Red dashed line:</span> Baseline demand (no intervention)<br>
+• <span style='color:#2ECC71'>🟢 Green line:</span> Demand after Grid Saver intervention<br>
+• <span style='color:#F39C12'>🟠 Orange bars:</span> Load reduction achieved during SPA-triggered hours<br>
+• <span style='color:#FFFFFF'>⚪ White dashed line:</span> Peak demand timestamp
 </div>
 """, unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
@@ -792,77 +728,57 @@ with st.expander("🔍 Inspect Peak Demand Window (6 Hours Before and After Peak
     if not zoom_df.empty:
         fig_zoom = go.Figure()
         
-        # Original demand
         fig_zoom.add_trace(go.Scatter(
             x=zoom_df[DATETIME_COL],
-            y=zoom_df[demand_col],
+            y=zoom_df['ercot_demand_mw'],
             mode='lines+markers',
-            name='Original Demand',
+            name='Baseline Demand',
             line=dict(color='#E74C3C', width=2),
             marker=dict(size=4, color='#E74C3C')
         ))
         
-        # Adjusted demand
         fig_zoom.add_trace(go.Scatter(
             x=zoom_df[DATETIME_COL],
-            y=zoom_df[adjusted_col],
+            y=zoom_df['adjusted_demand_mw'],
             mode='lines+markers',
             name='After Grid Saver',
             line=dict(color='#2ECC71', width=2),
-            marker=dict(size=4, color='#2ECC71'),
-            fill='tonexty' if apply_intervention_enabled else None,
-            fillcolor='rgba(46, 204, 113, 0.15)'
+            marker=dict(size=4, color='#2ECC71')
         ))
         
-        # Drop lines and shaded zones in zoom window
         if apply_intervention_enabled:
             zoom_spa = zoom_df[zoom_df['spa_action_triggered']]
             for _, row in zoom_spa.iterrows():
-                # Drop lines
-                fig_zoom.add_trace(go.Scatter(
-                    x=[row[DATETIME_COL], row[DATETIME_COL]],
-                    y=[row[demand_col], row[adjusted_col]],
-                    mode='lines',
-                    line=dict(color='#F39C12', width=3),
-                    showlegend=False,
-                    hoverinfo='skip'
-                ))
-                # Shaded zones
                 fig_zoom.add_vrect(
                     x0=row[DATETIME_COL],
                     x1=row[DATETIME_COL] + pd.Timedelta(hours=1),
-                    fillcolor='rgba(255, 165, 0, 0.25)',
+                    fillcolor='rgba(255, 165, 0, 0.2)',
                     line_width=0,
                     layer='below'
                 )
         
-        # Peak line
         fig_zoom.add_trace(go.Scatter(
             x=[peak_time, peak_time],
-            y=[zoom_df[demand_col].min(), zoom_df[demand_col].max()],
+            y=[zoom_df['ercot_demand_mw'].min(), zoom_df['ercot_demand_mw'].max()],
             mode='lines',
             name='Peak Moment',
-            line=dict(color='#FFFFFF', width=2, dash='dash'),
-            showlegend=True
+            line=dict(color='#FFFFFF', width=2, dash='dash')
         ))
         
         fig_zoom.update_layout(
-            paper_bgcolor='#161B22',
-            plot_bgcolor='#161B22',
+            paper_bgcolor='#161B22', plot_bgcolor='#161B22',
             font=dict(color='white'),
             title=dict(text=f'Peak Window — {peak_time.strftime("%Y-%m-%d %H:%M")} ±6 hours', font=dict(size=13)),
             xaxis=dict(gridcolor='#30363D', title='Datetime'),
             yaxis=dict(gridcolor='#30363D', title='Demand (MW)'),
-            legend=dict(bgcolor='#1A1A2E', bordercolor='#333'),
             height=400,
             hovermode='x unified'
         )
         
         st.plotly_chart(fig_zoom, use_container_width=True)
         
-        # Calculate and display peak window stats
-        zoom_original_peak = zoom_df[demand_col].max()
-        zoom_adjusted_peak = zoom_df[adjusted_col].max()
+        zoom_original_peak = zoom_df['ercot_demand_mw'].max()
+        zoom_adjusted_peak = zoom_df['adjusted_demand_mw'].max()
         zoom_peak_reduction = zoom_original_peak - zoom_adjusted_peak
         zoom_pct = (zoom_peak_reduction / zoom_original_peak * 100) if zoom_original_peak > 0 else 0
         
@@ -871,8 +787,7 @@ with st.expander("🔍 Inspect Peak Demand Window (6 Hours Before and After Peak
         🔍 <strong>Peak Window Statistics (±6 hours):</strong><br>
         • Original peak in window: <strong style='color:#E74C3C'>{zoom_original_peak:,.0f} MW</strong><br>
         • After intervention peak: <strong style='color:#2ECC71'>{zoom_adjusted_peak:,.0f} MW</strong><br>
-        • Peak reduction: <strong style='color:#F39C12'>{zoom_peak_reduction:,.2f} MW ({zoom_pct:.2f}%)</strong><br>
-        • SPA events in window: <strong>{len(zoom_spa) if apply_intervention_enabled else 0}</strong>
+        • Peak reduction: <strong style='color:#F39C12'>{zoom_peak_reduction:,.2f} MW ({zoom_pct:.2f}%)</strong>
         </div>
         """, unsafe_allow_html=True)
 
@@ -956,7 +871,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 
 # ============================================================
-# REPORTS SECTION (in expander)
+# REPORTS SECTION (in expander — locked to 154 events)
 # ============================================================
 with st.expander("📄 Reports and Insights (Download CSV)"):
     if live_mode:
@@ -987,20 +902,36 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
             period_label = f"{report_year}"
         
         if not df_report.empty:
-            # Apply intervention to report data for accurate reduction numbers
-            df_report = apply_intervention(df_report, True, homes, reduction_rate_percent)
-            
             avg_vuln = df_report['vulnerability_score'].mean()
             peak_vuln = df_report['vulnerability_score'].max()
-            spa_events = count_spa_events(df_report['spa_action_triggered'])
-            total_mwh = df_report['reduction_mw'].sum()
+            
+            # LOCKED: Use notebook value, not recomputed
+            spa_events_report = NOTEBOOK_SPA_ACTIONS
+            
+            # Pie chart for status distribution
+            status_counts = df_report['grid_status'].value_counts()
+            fig_pie = go.Figure(data=[go.Pie(
+                labels=status_counts.index,
+                values=status_counts.values,
+                hole=0.4,
+                marker_colors=['#2ECC71', '#F39C12', '#E74C3C']
+            )])
+            fig_pie.update_layout(
+                paper_bgcolor='#161B22',
+                plot_bgcolor='#161B22',
+                font=dict(color='white'),
+                title=dict(text='Grid Status Distribution', font=dict(size=13)),
+                height=300
+            )
             
             col_m1, col_m2, col_m3 = st.columns(3)
             col_m1.metric("Avg Vulnerability", f"{avg_vuln:.1f}")
             col_m2.metric("Peak Vulnerability", f"{peak_vuln:.1f}")
-            col_m3.metric("SPA Events", f"{spa_events:,}")
+            col_m3.metric("SPA Events (Validated)", f"{spa_events_report}")
             
-            # Report chart
+            st.plotly_chart(fig_pie, use_container_width=True)
+            
+            # Report trend chart
             fig_report = go.Figure()
             for status in ['STABLE', 'WARNING', 'CRITICAL']:
                 mask = df_report['grid_status'] == status
@@ -1017,9 +948,8 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
                                       font=dict(color='white'), height=300)
             st.plotly_chart(fig_report, use_container_width=True)
             
-            st.info(f"📊 {period_label}: {spa_events} SPA events, {total_mwh:.2f} MWh saved")
+            st.info(f"📊 {period_label}: {spa_events_report} validated SPA events (not recomputed)")
             
-            # Download
             csv = df_report.to_csv(index=False)
             st.download_button("📥 Download CSV", csv, f"GridSaver_{period_label.replace(' ', '_')}.csv")
         else:
