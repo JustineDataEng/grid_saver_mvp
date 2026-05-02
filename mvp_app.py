@@ -1436,9 +1436,104 @@ try:
         data=csv_data,
         file_name=f"GridSaver_{period_label}.csv"
     )
+# ============================================================
+# SECTION 9 — REPORTS AND INSIGHTS (HARDENED)
+# ============================================================
+st.markdown("## Reports and Insights")
 
-except Exception as e:
-    st.error(f"Export failed: {e}")
+if live_mode:
+    # If the user is in 24hr view, just show a message. Do NOT use st.stop()
+    st.info("📊 Reports are disabled in Recent Window View. Toggle 'Recent Window View' off in the sidebar to run full historical reports.")
+else:
+    # Only run the report engine if we are in Analysis Mode
+    st.markdown("*Select a time period to view grid performance analysis and download a report.*")
+
+    col_r1, col_r2, col_r3 = st.columns(3)
+
+    with col_r1:
+        report_type = st.selectbox("Report Type", ["Yearly", "Monthly", "Weekly"])
+
+    with col_r2:
+        report_year = st.selectbox("Year", sorted(df['year'].unique(), reverse=True))
+
+    with col_r3:
+        report_month, report_week = None, None
+        if report_type == "Monthly":
+            available_months = sorted(df[df['year'] == report_year]['month'].unique())
+            month_display = [MONTH_NAMES[m] for m in available_months]
+            selected_month_name = st.selectbox("Month", month_display)
+            report_month = [k for k, v in MONTH_NAMES.items() if v == selected_month_name][0]
+        elif report_type == "Weekly":
+            available_weeks = sorted(df[df['year'] == report_year]['week'].unique())
+            report_week = st.selectbox("Week", available_weeks)
+
+    # 1. Filter Data safely
+    if report_type == "Yearly":
+        df_report = df[df['year'] == report_year].copy()
+        period_label = f"{report_year}"
+    elif report_type == "Monthly":
+        df_report = df[(df['year'] == report_year) & (df['month'] == report_month)].copy()
+        period_label = f"{MONTH_NAMES[report_month]} {report_year}"
+    else:
+        df_report = df[(df['year'] == report_year) & (df['week'] == report_week)].copy()
+        period_label = f"Week {report_week}, {report_year}"
+
+    # 2. Display Report Safely
+    if df_report.empty:
+        st.warning(f"No data available for {period_label}.")
+    else:
+        # Run ACT layer safely
+        spa_report_df, _ = act_layer(df_report, reduction_rate_input, homes)
+
+        avg_vulnerability  = spa_report_df['vulnerability_score'].mean()
+        peak_vulnerability = spa_report_df['vulnerability_score'].max()
+        spa_events_report  = int(spa_report_df['spa_action_triggered'].sum())
+        total_mwh_report   = spa_report_df['reduction_mw'].sum()
+
+        st.markdown(f"**Showing: {period_label}** — {len(df_report):,} hours analysed")
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Avg Vulnerability", f"{avg_vulnerability:.1f}")
+        col2.metric("Peak Vulnerability", f"{peak_vulnerability:.1f}")
+        col3.metric("SPA Actions Triggered", f"{spa_events_report:,}")
+
+        # Vectorized Plotly Chart (Super Fast)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=spa_report_df['Datetime (UTC)'],
+            y=spa_report_df['vulnerability_score'],
+            mode='lines',
+            name='Vulnerability Score',
+            line=dict(color='#4A9EFF', width=1.5),
+            fill='tozeroy',
+            fillcolor='rgba(74, 158, 255, 0.1)'
+        ))
+        fig.update_layout(
+            paper_bgcolor='#161B22', plot_bgcolor='#161B22',
+            font=dict(color='white'),
+            title=dict(text=f'Vulnerability Trend — {period_label}', font=dict(color='white', size=13)),
+            xaxis=dict(gridcolor='#30363D'),
+            yaxis=dict(gridcolor='#30363D', range=[0, 100]),
+            height=300, margin=dict(t=40, b=20)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Insight Summary
+        insight = f"Average vulnerability for the period was {avg_vulnerability:.1f}/100. "
+        if spa_events_report > 0:
+            insight += f"Grid Saver actively triggered {spa_events_report} times, shedding {total_mwh_report:,.2f} MWh to stabilize the network."
+        else:
+            insight += "The grid remained relatively stable; no automated interventions were required."
+        st.info(insight)
+
+        # Export
+        csv_data = spa_report_df.to_csv(index=False)
+        st.download_button(
+            "Download Phase Report (CSV)",
+            data=csv_data,
+            file_name=f"GridSaver_Report_{period_label.replace(' ', '_')}.csv"
+        )
+
 # ============================================================
 # FOOTER
 # ============================================================
@@ -1459,3 +1554,4 @@ st.markdown("""
     </p>
 </div>
 """, unsafe_allow_html=True)
+        
