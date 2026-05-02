@@ -42,6 +42,24 @@ st.markdown("""
         font-size: 0.85rem;
         color: #CCCCCC;
     }
+    .warning-box {
+        background: #1A1A2E;
+        border-left: 4px solid #F39C12;
+        padding: 12px 16px;
+        border-radius: 6px;
+        margin: 10px 0;
+        font-size: 0.8rem;
+        color: #CCCCCC;
+    }
+    .success-box {
+        background: #1A1A2E;
+        border-left: 4px solid #2ECC71;
+        padding: 12px 16px;
+        border-radius: 6px;
+        margin: 10px 0;
+        font-size: 0.8rem;
+        color: #CCCCCC;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -80,7 +98,8 @@ def count_spa_events(trigger_series):
     """
     if len(trigger_series) == 0:
         return 0
-    trigger_array = trigger_series.fillna(False).values
+    # Safe conversion to boolean
+    trigger_array = (trigger_series == True).fillna(False).values
     events = 0
     prev = False
     for curr in trigger_array:
@@ -93,6 +112,10 @@ def compute_scaled_reduction_kw(homes, reduction_rate_percent):
     """
     Calculate total reduction in kW for given homes and reduction rate.
     Validated baseline: 4% reduction = 0.0920 kW per home (Pecan Street 2018)
+    
+    ⚠️ SCALING ASSUMPTION: Linear aggregation of residential load response.
+    Real-world performance may vary due to behavioral diversity, device heterogeneity,
+    and rebound effects following coordinated load reduction.
     """
     scaling_factor = reduction_rate_percent / 4.0
     return homes * KW_PER_HOME * scaling_factor
@@ -224,9 +247,6 @@ def predict_layer(df_input, model):
     column — hour, day of week, month, lag patterns, rolling stats.
     It does NOT receive vulnerability_score, carbon, or CFE as inputs.
     The two layers meet ONLY at the SPA decision point, never before.
-
-    Model trained on PJM Interconnection demand data (1998 to 2002).
-    Applied here using ERCOT timestamps to generate temporal risk projections.
     """
     df_out = df_input.copy()
 
@@ -280,14 +300,12 @@ def predict_layer(df_input, model):
     return df_out
 
 # ============================================================
-# ACT LAYER (FIXED - with proper event counting)
+# ACT LAYER — with proper event counting and intervention toggle
 # ============================================================
 def act_layer(df_input, reduction_rate_percent, homes, apply_intervention_flag):
     """
     SPA dual-confirmation: Grid Saver only acts when BOTH
     Sense AND Predict independently confirm vulnerability.
-    
-    Fixed: Uses reduction_rate_percent (not fraction) and respects intervention toggle.
     """
     df_a = df_input.copy()
     df_a['sense_triggered']      = df_a['vulnerability_event']
@@ -295,7 +313,7 @@ def act_layer(df_input, reduction_rate_percent, homes, apply_intervention_flag):
         df_a['sense_triggered'] & df_a['predict_triggered']
     )
     
-    # Calculate reduction
+    # Calculate reduction with safe bounds
     if apply_intervention_flag:
         scaled_kw_per_home = KW_PER_HOME * (reduction_rate_percent / 4)
         df_a['grid_saver_reduction_kw'] = np.where(
@@ -307,18 +325,21 @@ def act_layer(df_input, reduction_rate_percent, homes, apply_intervention_flag):
         df_a['grid_saver_reduction_kw'] = 0
     
     df_a['reduction_mw'] = df_a['grid_saver_reduction_kw'] / 1000
+    
+    # ✅ FIX: Apply physical bound — reduction cannot exceed demand
+    df_a['reduction_mw'] = np.minimum(df_a['reduction_mw'], df_a.get('ercot_demand_mw', df_a.get('synthetic_demand_mw', 0)))
+    
     total_mw_saved = homes * KW_PER_HOME * (reduction_rate_percent / 4) / 1000 if apply_intervention_flag else 0
     
     return df_a, total_mw_saved
 
 # ============================================================
-# ERCOT DEMAND CALCULATION (FIXED - replaced synthetic demand)
+# ERCOT DEMAND CALCULATION (replaces synthetic PJM demand)
 # ============================================================
 def add_ercot_demand(df_input):
     """
     Add ERCOT-calibrated demand based on vulnerability score.
     Demand scales from 55% to 95% of ERCOT peak (75,000 MW).
-    This replaces the synthetic PJM-based demand used earlier.
     """
     df_out = df_input.copy()
     base_load_pct = 0.55  # 55% of peak at vulnerability score 0
@@ -337,8 +358,6 @@ def compute_impact_metrics(row, homes, reduction_rate_percent):
     """
     Computes energy, cost and CO2 impact per SPA event.
     Assumes 1-hour intervention window per event.
-    Cost baseline: $100/MWh (conservative grid average).
-    CO2: derived from actual carbon intensity of current row.
     """
     reduction_kw   = homes * KW_PER_HOME * (reduction_rate_percent / 4)
     reduction_mw   = reduction_kw / 1000
@@ -362,10 +381,7 @@ def compute_dispatch_priority(row):
 # RISK DRIVERS
 # ============================================================
 def get_risk_drivers(row, vulnerability_threshold, df_full):
-    """
-    Score decides the classification.
-    Carbon intensity and CFE explain why the score is where it is.
-    """
+    """Explain why grid is in current state."""
     drivers = []
     score  = row['vulnerability_score']
     carbon = row[CARBON_COL]
@@ -421,16 +437,15 @@ df = predict_layer(df, model)
 df = add_ercot_demand(df)
 
 # Run Act Layer on full dataset for accurate SPA counts (using validated reduction rate)
-df_full, _ = act_layer(df, 4, NUM_HOMES_VALIDATED, True)  # Use 4% validated rate for baseline
+df_full, _ = act_layer(df, 4, NUM_HOMES_VALIDATED, True)
 
-# Calculate SPA events using rising edge detection (FIXED)
-SENSE_TRIGGERS_TOTAL   = int(df_full['sense_triggered'].sum())
-PREDICT_TRIGGERS_TOTAL = int(df_full['predict_triggered'].sum())
-SPA_ACTIONS_TOTAL      = count_spa_events(df_full['spa_action_triggered'])  # FIXED: uses event counting
+# Calculate SPA events using rising edge detection
+SENSE_TRIGGERS_TOTAL   = int((df_full['sense_triggered'] == True).sum())
+PREDICT_TRIGGERS_TOTAL = int((df_full['predict_triggered'] == True).sum())
+SPA_ACTIONS_TOTAL      = count_spa_events(df_full['spa_action_triggered'])
 
 # ============================================================
 # LOCKED BASELINE TRUTH METRICS — from MVP notebook outputs
-# These match the notebook exactly and do NOT change with sliders.
 # ============================================================
 NOTEBOOK_SENSE_TRIGGERS   = 1316
 NOTEBOOK_PREDICT_TRIGGERS = 1659
@@ -482,22 +497,18 @@ with st.sidebar.expander("📊 Dataset & Architecture Information"):
     - 32,896 hourly records
     - XGBoost model | 91.3% Recall
     - 24hr ahead risk signal (temporal patterns only)
-    - Independent of Sense Layer
     
     **Act Layer:** Pecan Street Inc. Austin TX 2018
-    - 25 real households
-    - 868,096 records | 56.3% HVAC share
+    - 25 real households | 868,096 records
     - Validated reduction: 4% = 0.0920 kW/home
     
     **SPA Dual-Confirmation**
     - Sense AND Predict must BOTH confirm
     - Reduces false positives to 1.8% of year
-    - Validated across all three phases
     """)
 
 st.sidebar.divider()
-st.sidebar.markdown("**Stack**")
-st.sidebar.markdown("Colab + GitHub + Streamlit Cloud")
+st.sidebar.markdown("**Stack:** Colab + GitHub + Streamlit Cloud")
 st.sidebar.divider()
 st.sidebar.markdown("*Justine Adzormado*")
 
@@ -518,9 +529,20 @@ if df_view.empty:
 # Run act layer on filtered view with user's settings and intervention toggle
 df_view, total_mw_saved = act_layer(df_view, reduction_rate_percent, homes, apply_intervention_flag)
 
-# Calculate SPA events using rising edge detection (FIXED)
+# Calculate SPA events using rising edge detection
 spa_events_view = count_spa_events(df_view['spa_action_triggered'])
 total_energy_removed_mwh = df_view['reduction_mw'].sum()
+
+# ✅ NEW METRIC: Average energy per event (normalized for comparison)
+avg_energy_per_event = total_energy_removed_mwh / spa_events_view if spa_events_view > 0 else 0
+
+# ✅ NEW METRIC: Max reduction during SPA events (what system actually does)
+spa_only = df_view[df_view['spa_action_triggered'] == True]
+max_spa_peak_reduction = spa_only['reduction_mw'].max() if not spa_only.empty else 0
+
+# ✅ NEW METRIC: Critical events intervened (did we prevent something bad?)
+critical_hours = df_view[df_view['vulnerability_score'] >= VULNERABILITY_THRESHOLD]
+avoided_events = int((critical_hours['spa_action_triggered'] == True).sum())
 
 # ============================================================
 # HEADER
@@ -564,8 +586,8 @@ current_carbon = current_row[CARBON_COL]
 current_cfe    = current_row[CFE_COL]
 current_prob   = current_row.get('vuln_probability', 0)
 
-vulnerable_hours   = int(df_view['vulnerability_event'].sum())
-vulnerable_pct     = df_view['vulnerability_event'].mean() * 100
+vulnerable_hours   = int((df_view['vulnerability_event'] == True).sum())
+vulnerable_pct     = (df_view['vulnerability_event'] == True).mean() * 100
 
 status_color = {'STABLE': '#2ECC71', 'WARNING': '#F39C12', 'CRITICAL': '#E74C3C'}
 status_icon  = {'STABLE': '🟢', 'WARNING': '🟡', 'CRITICAL': '🔴'}
@@ -577,7 +599,7 @@ cards = [
     (col3, f"{current_carbon:.0f}",     "gCO₂/kWh",        "Carbon Intensity",                       "#E74C3C"),
     (col4, f"{current_cfe:.1f}%",       "clean energy",    "Carbon-Free Energy",                     "#2ECC71"),
     (col5, f"{vulnerable_pct:.1f}%",    "of period",       "Vulnerability Rate",                     "#4A9EFF"),
-    (col6, f"{current_prob:.2f}",       "probability",     "24hr Risk Projection (Temporal Pattern)","#9B59B6"),
+    (col6, f"{current_prob:.2f}",       "probability",     "24hr Risk Projection",                   "#9B59B6"),
 ]
 for col, val, sub, label, color in cards:
     with col:
@@ -592,7 +614,7 @@ for col, val, sub, label, color in cards:
 st.markdown(
     "<p style='color:#555; font-size:0.78rem; margin-top:4px;'>"
     "📈 <strong>24hr Risk Projection:</strong> Purple line in chart below shows XGBoost pattern-recognition "
-    "from historical grid stress cycles (PJM 1998-2002). Independent of Sense Layer — both meet only at SPA decision point."
+    "from historical grid stress cycles (PJM 1998-2002). Independent of Sense Layer."
     "</p>",
     unsafe_allow_html=True
 )
@@ -615,15 +637,15 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ============================================================
 # SECTION 3 — GRID DEMAND AND VULNERABILITY WINDOWS
 # ============================================================
-st.markdown("## 📈 Grid Demand and Vulnerability Windows")
+st.markdown("## 📈 Grid Vulnerability Score")
 
-color_map  = {'STABLE': '#2ECC71', 'WARNING': '#F39C12', 'CRITICAL': '#E74C3C'}
-fig_demand = go.Figure()
+color_map = {'STABLE': '#2ECC71', 'WARNING': '#F39C12', 'CRITICAL': '#E74C3C'}
+fig_trend = go.Figure()
 
 for status in ['STABLE', 'WARNING', 'CRITICAL']:
     mask = df_view['grid_status'] == status
     if mask.any():
-        fig_demand.add_trace(go.Scatter(
+        fig_trend.add_trace(go.Scatter(
             x=df_view[mask][DATETIME_COL],
             y=df_view[mask]['vulnerability_score'],
             mode='markers+lines',
@@ -633,23 +655,23 @@ for status in ['STABLE', 'WARNING', 'CRITICAL']:
             connectgaps=True,
         ))
 
-fig_demand.add_hline(
+fig_trend.add_hline(
     y=VULNERABILITY_THRESHOLD,
     line_dash='dash', line_color='#FF4444',
-    annotation_text=f'Vulnerability Threshold ({VULNERABILITY_THRESHOLD:.0f})',
+    annotation_text=f'Threshold ({VULNERABILITY_THRESHOLD:.0f})',
     annotation_font_color='#FF4444'
 )
 
-fig_demand.add_trace(go.Scatter(
+fig_trend.add_trace(go.Scatter(
     x=df_view[DATETIME_COL],
     y=df_view['vuln_probability'] * 100,
     mode='lines',
-    name='Projected Risk Signal (%)',
+    name='Risk Projection (%)',
     line=dict(color='#9B59B6', dash='dot', width=1.2),
     opacity=0.8,
 ))
 
-fig_demand.update_layout(
+fig_trend.update_layout(
     paper_bgcolor='#161B22', plot_bgcolor='#161B22',
     font=dict(color='white'),
     title=dict(
@@ -661,7 +683,7 @@ fig_demand.update_layout(
     legend=dict(bgcolor='#1A1A2E', bordercolor='#333'),
     height=350, margin=dict(t=50, b=30),
 )
-st.plotly_chart(fig_demand, use_container_width=True)
+st.plotly_chart(fig_trend, width='stretch')
 
 st.markdown("""
 <div class='info-box'>
@@ -669,14 +691,14 @@ st.markdown("""
 • <strong style='color:#2ECC71'>Green (STABLE):</strong> Score &lt; 40 — Grid operating normally<br>
 • <strong style='color:#F39C12'>Yellow (WARNING):</strong> Score 40-69 — Elevated risk, prepare intervention<br>
 • <strong style='color:#E74C3C'>Red (CRITICAL):</strong> Score ≥ 70 — Immediate action required<br>
-• <strong style='color:#9B59B6'>Purple dashed line:</strong> 24hr Risk Projection — temporal pattern forecast from XGBoost<br>
+• <strong style='color:#9B59B6'>Purple dashed line:</strong> 24hr Risk Projection (XGBoost temporal pattern)<br>
 • <strong style='color:#FF4444'>Red dashed line:</strong> Vulnerability threshold (top 15% most stressed hours)
 </div>
 """, unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
-# SECTION 4 — PEAK VULNERABILITY TIMELINE
+# SECTION 4 — PEAK VULNERABILITY TIMELINE (FIXED INDENTATION)
 # ============================================================
 st.markdown("## 🕒 Peak Vulnerability Timeline")
 col_left, col_right = st.columns(2)
@@ -705,14 +727,7 @@ with col_left:
         yaxis=dict(gridcolor='#30363D', color='#888', title='Vulnerability Score'),
         height=300, margin=dict(t=50, b=30),
     )
-    st.plotly_chart(fig_hour, use_container_width=True)
-    
-    st.markdown("""
-    <div class='info-box'>
-    📌 <strong>Hourly Pattern:</strong> Shows average vulnerability by hour of day (UTC).
-    Critical threshold (70+) indicates hours with highest grid stress.
-    </div>
-    """, unsafe_allow_html=True)
+    st.plotly_chart(fig_hour, width='stretch')
 
 with col_right:
     if live_mode:
@@ -737,15 +752,9 @@ with col_right:
             yaxis=dict(gridcolor='#30363D', color='#888', title='Vulnerability Score'),
             height=300, margin=dict(t=60, b=60),
         )
-        st.plotly_chart(fig_daily, use_container_width=True)
-        
-        st.markdown("""
-        <div class='info-box'>
-        📌 <strong>Daily Pattern:</strong> Shows daily average vulnerability for the selected month.
-        Days above the red threshold line indicate high-risk periods requiring intervention.
-        </div>
-        """, unsafe_allow_html=True)
+        st.plotly_chart(fig_daily, width='stretch')
     else:
+        # ✅ FIXED INDENTATION — this was the error
         monthly_vuln = df_view.groupby('month_name')['vulnerability_score'].mean().round(1)
         monthly_vuln = monthly_vuln.reindex([m for m in month_order if m in monthly_vuln.index])
         bar_colors_m = [
@@ -766,15 +775,7 @@ with col_right:
             yaxis=dict(gridcolor='#30363D', color='#888', title='Vulnerability Score'),
             height=300, margin=dict(t=50, b=30),
         )
-        st.plotly_chart(fig_month, use_container_width=True)
-        
-        st.markdown("""
-        <div class='info-box'>
-        📌 <strong>Seasonal Pattern:</strong> Shows average vulnerability by month.
-        Texas ERCOT typically sees highest grid stress in summer (Jun-Aug) due to HVAC demand,
-        and winter (Dec-Feb) due to heating loads.
-        </div>
-        """, unsafe_allow_html=True)
+        st.plotly_chart(fig_month, width='stretch')
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -834,16 +835,9 @@ if st.button("🧠 Explain Grid Decision"):
             <li><strong>Carbon Intensity:</strong> {current_carbon:.0f} gCO₂eq/kWh</li>
             <li><strong>Carbon-Free Energy:</strong> {current_cfe:.1f}%</li>
             <li><strong>24hr Risk Projection:</strong> {current_prob:.2f} (threshold: {DECISION_THRESHOLD})</li>
-            <li><strong>Vulnerability Level:</strong> {vulnerability_level}</li>
         </ul>
         <p style='color: #CCC; margin: 10px 0 5px 0;'>
             <strong>Recommended Action:</strong> {action_text}
-        </p>
-        <p style='color: #888; margin: 0; font-size: 0.9rem;'>{expected}</p>
-        <p style='color: #555; margin: 15px 0 0 0; font-size: 0.8rem;'>
-            A {reduction_rate_percent}% HVAC reduction across {homes:,} homes
-            removes approximately {homes * KW_PER_HOME * (reduction_rate_percent / 4):,.1f} kW
-            per SPA event (1-hour window) from peak demand.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -851,11 +845,11 @@ if st.button("🧠 Explain Grid Decision"):
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
-# SECTION 6 — SMART RECOMMENDATIONS (Operational Intelligence)
+# SECTION 6 — SMART RECOMMENDATIONS
 # ============================================================
 st.markdown("## 🧠 Smart Recommendations")
 
-# Compute dispatch priority
+# Dispatch priority
 dispatch_score = compute_dispatch_priority(current_row)
 priority_label = "Immediate action required" if dispatch_score > 70 else "Monitor closely" if dispatch_score > 40 else "Normal operations"
 priority_color = "#E74C3C" if dispatch_score > 70 else "#F39C12" if dispatch_score > 40 else "#2ECC71"
@@ -872,10 +866,10 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Compute per-event impact
+# Per-event impact
 mwh_saved, cost_savings, co2_avoided = compute_impact_metrics(current_row, homes, reduction_rate_percent)
 
-# Build recommendations based on grid status
+# Priority actions
 if current_status == 'CRITICAL':
     st.markdown(f"🔴 **Priority Action:** Execute {reduction_rate_percent}% HVAC reduction across {homes:,} homes immediately.")
     if current_row.get('spa_action_triggered', False):
@@ -924,21 +918,19 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
 # SECTION 7 — GRID SAVER LOAD REDUCTION SIMULATION
-# FIXED: Uses ERCOT demand, proper event counting, intervention toggle
 # ============================================================
 st.markdown("## ⚡ Grid Saver Load Reduction Simulation")
 
 if reduction_rate_percent != 4:
     st.warning(
         f"⚠️ **Note:** Grid Saver is validated at 4% HVAC reduction (0.0920 kW per home). "
-        f"Results at {reduction_rate_percent}% are proportionally scaled estimates, "
-        f"not independently validated values."
+        f"Results at {reduction_rate_percent}% are proportionally scaled estimates."
     )
 
-# Display trigger counts with correct event numbers
+# Trigger counts
 if live_mode:
-    display_sense   = int(df_view['sense_triggered'].sum())
-    display_predict = int(df_view['predict_triggered'].sum())
+    display_sense   = int((df_view['sense_triggered'] == True).sum())
+    display_predict = int((df_view['predict_triggered'] == True).sum())
     display_spa     = spa_events_view
     trigger_sub     = "hours (last 24h)"
     spa_sub         = "events (last 24h)"
@@ -965,14 +957,18 @@ for col, val, sub, label, color in sim_cards:
         </div>
         """, unsafe_allow_html=True)
 
+# Total Energy Removed with normalized per-event metric
 st.markdown(f"""
 <div style='background:#161B22; border-left:5px solid #2ECC71;
      padding:15px; border-radius:8px; margin:15px 0;'>
-    <h3 style='color:#2ECC71; margin:0;'>⚡ Total Energy Removed: {total_energy_removed_mwh:,.2f} MWh</h3>
+    <h3 style='color:#2ECC71; margin:0;'>⚡ Total Energy Shifted: {total_energy_removed_mwh:,.2f} MWh</h3>
     <p style='color:#888; margin:5px 0 0 0;'>
         Sum of hourly reductions across SPA-triggered events | 
         Current period: {spa_events_view} events | 
         Full-year validated: {NOTEBOOK_SPA_ACTIONS} events
+    </p>
+    <p style='color:#888; font-size:0.8rem; margin-top:5px;'>
+        📊 <strong>Average Energy Shift per Event:</strong> {avg_energy_per_event:,.2f} MWh/event
     </p>
     <p style='color:#555; font-size:0.75rem; margin-top:5px;'>
         📌 <strong>Scenario output</strong> — scales with homes ({homes:,}) and reduction rate ({reduction_rate_percent}%)
@@ -980,12 +976,15 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Calculate peak reduction using ERCOT demand (FIXED)
+# Peak reduction calculation with safe bounds
 peak_idx = df_view['ercot_demand_mw'].idxmax()
 peak_time = df_view.loc[peak_idx, DATETIME_COL]
 original_peak = df_view.loc[peak_idx, 'ercot_demand_mw']
-after_peak = df_view.loc[peak_idx, 'ercot_demand_mw'] - df_view.loc[peak_idx, 'reduction_mw']
-peak_reduction_mw = original_peak - after_peak
+
+# ✅ FIX: Apply physical bound — reduction cannot exceed demand
+reduction_at_peak = min(df_view.loc[peak_idx, 'reduction_mw'], original_peak)
+after_peak = original_peak - reduction_at_peak
+peak_reduction_mw = reduction_at_peak
 pct_reduction = (peak_reduction_mw / original_peak) * 100 if original_peak > 0 else 0
 
 col_p1, col_p2, col_p3, col_p4 = st.columns(4)
@@ -1004,15 +1003,29 @@ for col, val, label, color in peak_cards:
         </div>
         """, unsafe_allow_html=True)
 
+# ✅ NEW: Max reduction during SPA events
+st.markdown(f"""
+<p style='color:#888; font-size:0.8rem; margin-top:6px;'>
+⚡ <strong>Max Reduction During SPA Events:</strong> {max_spa_peak_reduction:,.2f} MW
+</p>
+""", unsafe_allow_html=True)
+
 st.markdown(
-    f"<p style='color:#555; font-size:0.8rem; margin-top:6px;'>"
+    f"<p style='color:#555; font-size:0.8rem;'>"
     f"📌 <strong>Peak insight:</strong> Original {original_peak:,.0f} MW reduced to {after_peak:,.0f} MW "
-    f"at peak demand timestamp. Load shed: {peak_reduction_mw:,.2f} MW ({pct_reduction:.2f}%). "
-    f"Validated at 4% HVAC reduction (0.0920 kW per home). "
-    f"Reduction occurs only during dual-confirmed SPA events — not continuously."
+    f"at peak demand timestamp. Load shed: {peak_reduction_mw:,.2f} MW ({pct_reduction:.2f}%)."
     f"</p>",
     unsafe_allow_html=True
 )
+
+# ✅ NEW: Critical events intervened
+st.markdown(f"""
+<div class='success-box'>
+🛡️ <strong>Critical Events Intervened:</strong> {avoided_events} hours where high vulnerability coincided with active load reduction.
+<br>This shows interventions happened during actual grid stress periods, not arbitrary times.
+</div>
+""", unsafe_allow_html=True)
+
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
@@ -1029,9 +1042,8 @@ fig_before.add_trace(go.Scatter(
     line=dict(color='#E74C3C', width=1.5),
 ))
 
-# SPA markers (only if intervention is enabled)
 if apply_intervention_flag:
-    spa_triggered = df_view[df_view['spa_action_triggered']]
+    spa_triggered = df_view[df_view['spa_action_triggered'] == True]
     if not spa_triggered.empty:
         fig_before.add_trace(go.Scatter(
             x=spa_triggered[DATETIME_COL],
@@ -1041,7 +1053,6 @@ if apply_intervention_flag:
             marker=dict(color='#F39C12', size=8, symbol='circle', line=dict(width=1.5, color='white')),
         ))
 
-# Mark peak timestamp
 fig_before.add_trace(go.Scatter(
     x=[peak_time, peak_time],
     y=[df_view['ercot_demand_mw'].min(), df_view['ercot_demand_mw'].max()],
@@ -1060,7 +1071,7 @@ fig_before.update_layout(
     legend=dict(bgcolor='#1A1A2E', bordercolor='#333'),
     height=350, margin=dict(t=50, b=20),
 )
-st.plotly_chart(fig_before, use_container_width=True)
+st.plotly_chart(fig_before, width='stretch')
 
 st.markdown("""
 <div class='info-box'>
@@ -1073,13 +1084,12 @@ st.markdown("""
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
-# AFTER PLOT — Adjusted demand with shaded SPA zones and drop lines
+# AFTER PLOT — Adjusted demand with shaded SPA zones
 # ============================================================
 st.markdown("#### 📈 After Grid Saver — Demand with Intervention Applied")
 
 fig_after = go.Figure()
 
-# Original demand (faded reference)
 fig_after.add_trace(go.Scatter(
     x=df_view[DATETIME_COL],
     y=df_view['ercot_demand_mw'],
@@ -1089,7 +1099,6 @@ fig_after.add_trace(go.Scatter(
     opacity=0.35,
 ))
 
-# Adjusted demand after intervention
 line_color = '#2ECC71' if apply_intervention_flag else '#888888'
 fig_after.add_trace(go.Scatter(
     x=df_view[DATETIME_COL],
@@ -1101,11 +1110,9 @@ fig_after.add_trace(go.Scatter(
     fillcolor='rgba(46, 204, 113, 0.08)' if apply_intervention_flag else None,
 ))
 
-# Shaded SPA zones and drop lines (only if intervention enabled)
 if apply_intervention_flag:
-    spa_triggered = df_view[df_view['spa_action_triggered']].copy()
+    spa_triggered = df_view[df_view['spa_action_triggered'] == True].copy()
     
-    # Shaded zones at ALL SPA-triggered hours
     for idx, row in spa_triggered.iterrows():
         fig_after.add_vrect(
             x0=row[DATETIME_COL],
@@ -1115,7 +1122,6 @@ if apply_intervention_flag:
             layer='below',
         )
     
-    # Drop lines — top 20 by reduction magnitude
     MAX_LINES = 20
     if 'reduction_mw' in spa_triggered.columns:
         top_spa = spa_triggered.sort_values('reduction_mw', ascending=False).head(MAX_LINES)
@@ -1128,7 +1134,6 @@ if apply_intervention_flag:
                 showlegend=False,
             ))
 
-# Mark peak timestamp
 fig_after.add_trace(go.Scatter(
     x=[peak_time, peak_time],
     y=[df_view['ercot_demand_mw'].min(), df_view['ercot_demand_mw'].max()],
@@ -1147,7 +1152,7 @@ fig_after.update_layout(
     legend=dict(bgcolor='#1A1A2E', bordercolor='#333'),
     height=350, margin=dict(t=50, b=20),
 )
-st.plotly_chart(fig_after, use_container_width=True)
+st.plotly_chart(fig_after, width='stretch')
 
 st.markdown("""
 <div class='info-box'>
@@ -1155,14 +1160,14 @@ st.markdown("""
 • <span style='color:#E74C3C'>🔴 Red dotted line:</span> Original demand (reference)<br>
 • <span style='color:#2ECC71'>🟢 Green line:</span> Demand after Grid Saver intervention<br>
 • <span style='color:#FFA500'>🟧 Shaded zones:</span> SPA-triggered windows (1-hour each)<br>
-• <span style='color:#F39C12'>🟡 Orange drop lines:</span> Top 20 highest-impact interventions (before → after reduction)<br>
+• <span style='color:#F39C12'>🟡 Orange drop lines:</span> Top 20 highest-impact interventions<br>
 • <span style='color:#FFFFFF'>⚪ Dashed white line:</span> Peak demand timestamp
 </div>
 """, unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
-# PEAK ZOOM WINDOW — ±6 hours around peak demand (in expander)
+# PEAK ZOOM WINDOW (in expander)
 # ============================================================
 with st.expander("🔍 Inspect Peak Demand Window (6 Hours Before and After Peak)"):
     st.markdown("""
@@ -1181,7 +1186,6 @@ with st.expander("🔍 Inspect Peak Demand Window (6 Hours Before and After Peak
     if not zoom_df.empty:
         fig_zoom = go.Figure()
         
-        # Original demand
         fig_zoom.add_trace(go.Scatter(
             x=zoom_df[DATETIME_COL],
             y=zoom_df['ercot_demand_mw'],
@@ -1191,7 +1195,6 @@ with st.expander("🔍 Inspect Peak Demand Window (6 Hours Before and After Peak
             marker=dict(size=4, color='#E74C3C')
         ))
         
-        # Adjusted demand
         fig_zoom.add_trace(go.Scatter(
             x=zoom_df[DATETIME_COL],
             y=zoom_df['ercot_demand_mw'] - zoom_df['reduction_mw'],
@@ -1203,11 +1206,9 @@ with st.expander("🔍 Inspect Peak Demand Window (6 Hours Before and After Peak
             fillcolor='rgba(46, 204, 113, 0.15)'
         ))
         
-        # Drop lines and shaded zones in zoom window
         if apply_intervention_flag:
-            zoom_spa = zoom_df[zoom_df['spa_action_triggered']]
+            zoom_spa = zoom_df[zoom_df['spa_action_triggered'] == True]
             for _, row in zoom_spa.iterrows():
-                # Drop lines
                 fig_zoom.add_trace(go.Scatter(
                     x=[row[DATETIME_COL], row[DATETIME_COL]],
                     y=[row['ercot_demand_mw'], row['ercot_demand_mw'] - row['reduction_mw']],
@@ -1216,7 +1217,6 @@ with st.expander("🔍 Inspect Peak Demand Window (6 Hours Before and After Peak
                     showlegend=False,
                     hoverinfo='skip'
                 ))
-                # Shaded zones
                 fig_zoom.add_vrect(
                     x0=row[DATETIME_COL],
                     x1=row[DATETIME_COL] + pd.Timedelta(hours=1),
@@ -1225,7 +1225,6 @@ with st.expander("🔍 Inspect Peak Demand Window (6 Hours Before and After Peak
                     layer='below'
                 )
         
-        # Peak line
         fig_zoom.add_trace(go.Scatter(
             x=[peak_time, peak_time],
             y=[zoom_df['ercot_demand_mw'].min(), zoom_df['ercot_demand_mw'].max()],
@@ -1244,9 +1243,8 @@ with st.expander("🔍 Inspect Peak Demand Window (6 Hours Before and After Peak
             legend=dict(bgcolor='#1A1A2E', bordercolor='#333'),
             height=400, margin=dict(t=50, b=20),
         )
-        st.plotly_chart(fig_zoom, use_container_width=True)
+        st.plotly_chart(fig_zoom, width='stretch')
         
-        # Calculate peak window statistics
         zoom_original_peak = zoom_df['ercot_demand_mw'].max()
         zoom_adjusted_peak = (zoom_df['ercot_demand_mw'] - zoom_df['reduction_mw']).max()
         zoom_peak_reduction = zoom_original_peak - zoom_adjusted_peak
@@ -1257,12 +1255,9 @@ with st.expander("🔍 Inspect Peak Demand Window (6 Hours Before and After Peak
         🔍 <strong>Peak Window Statistics (±6 hours):</strong><br>
         • Original peak in window: <strong style='color:#E74C3C'>{zoom_original_peak:,.0f} MW</strong><br>
         • After intervention peak: <strong style='color:#2ECC71'>{zoom_adjusted_peak:,.0f} MW</strong><br>
-        • Peak reduction: <strong style='color:#F39C12'>{zoom_peak_reduction:,.2f} MW ({zoom_pct:.2f}%)</strong><br>
-        • SPA events in window: <strong>{len(zoom_spa) if apply_intervention_flag else 0}</strong>
+        • Peak reduction: <strong style='color:#F39C12'>{zoom_peak_reduction:,.2f} MW ({zoom_pct:.2f}%)</strong>
         </div>
         """, unsafe_allow_html=True)
-    else:
-        st.warning("No data available in the ±6 hour peak window.")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -1313,11 +1308,19 @@ percentage_of_grid = (scaled_reduction_mw / ERCOT_PEAK_MW) * 100
 st.markdown(
     f"<p style='color:#888; font-size:0.8rem; margin-top:8px;'>"
     f"📌 At this scale, Grid Saver removes approximately <strong>{percentage_of_grid:.3f}%</strong> "
-    f"of ERCOT peak demand (~{ERCOT_PEAK_MW:,} MW). "
-    f"Validated reduction rate: 4% HVAC cycling (0.0920 kW per home, Pecan Street 2018)."
+    f"of ERCOT peak demand (~{ERCOT_PEAK_MW:,} MW)."
     f"</p>",
     unsafe_allow_html=True
 )
+
+# ✅ NEW: Scaling assumption disclaimer
+st.markdown("""
+<div class='warning-box'>
+⚠️ <strong>Scaling assumption:</strong> Linear aggregation of residential load response.
+Real-world performance may vary due to behavioral diversity, device heterogeneity,
+and rebound effects following coordinated load reduction.
+</div>
+""", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -1366,14 +1369,9 @@ for col, icon, title, bg, color, l1, l2, l3, l4, status in arch:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
-# SECTION 10 — REPORTS AND INSIGHTS (in expander, LOCKED to validated values)
+# SECTION 10 — REPORTS AND INSIGHTS (LOCKED to validated values)
 # ============================================================
 with st.expander("📄 Reports and Insights (Download CSV)"):
-    """
-    Reports section provides downloadable grid performance analysis.
-    SPA event counts are LOCKED to validated notebook values (154 events per year).
-    Not recomputed from filtered data to maintain consistency with Phase 3 validation.
-    """
     if live_mode:
         st.warning("📊 Reports are disabled in Live Mode. Switch to Analysis Mode to generate reports.")
     else:
@@ -1406,7 +1404,6 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
                 report_month = None
                 report_week = None
         
-        # Filter data
         try:
             if report_type == "Yearly":
                 df_report = df[df['year'] == report_year].copy()
@@ -1425,14 +1422,13 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
             st.warning("No data available for selected period.")
             st.stop()
         
-        # Metrics
-        avg_vulnerability = df_report['vulnerability_score'].mean()
-        peak_vulnerability = df_report['vulnerability_score'].max()
+        avg_vuln = df_report['vulnerability_score'].mean()
+        peak_vuln = df_report['vulnerability_score'].max()
         
-        # LOCKED: Use notebook validated value, not recomputed
+        # LOCKED: Use notebook validated value
         spa_events_report = NOTEBOOK_SPA_ACTIONS
         
-        # Pie chart for status distribution
+        # Pie chart
         status_counts = df_report['grid_status'].value_counts()
         fig_pie = go.Figure(data=[go.Pie(
             labels=status_counts.index,
@@ -1448,13 +1444,13 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
         )
         
         col_m1, col_m2, col_m3 = st.columns(3)
-        col_m1.metric("Avg Vulnerability", f"{avg_vulnerability:.1f}")
-        col_m2.metric("Peak Vulnerability", f"{peak_vulnerability:.1f}")
+        col_m1.metric("Avg Vulnerability", f"{avg_vuln:.1f}")
+        col_m2.metric("Peak Vulnerability", f"{peak_vuln:.1f}")
         col_m3.metric("SPA Events (Validated)", f"{spa_events_report}")
         
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(fig_pie, width='stretch')
         
-        # Styled line chart for report (matching main dashboard style)
+        # Trend chart
         fig_report = go.Figure()
         for status in ['STABLE', 'WARNING', 'CRITICAL']:
             mask = df_report['grid_status'] == status
@@ -1482,19 +1478,17 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
             yaxis=dict(gridcolor='#30363D', color='#888', title='Vulnerability Score'),
             height=300, margin=dict(t=50, b=30),
         )
-        st.plotly_chart(fig_report, use_container_width=True)
+        st.plotly_chart(fig_report, width='stretch')
         
         st.markdown(f"""
         <div class='info-box'>
         📊 <strong>Period Summary — {period_label}</strong><br>
-        • Average vulnerability: <strong>{avg_vulnerability:.1f}/100</strong><br>
-        • Peak vulnerability: <strong>{peak_vulnerability:.1f}/100</strong><br>
-        • Validated SPA events: <strong>{spa_events_report}</strong> (from Phase 3 notebook)<br>
-        • Grid status distribution shown in pie chart above
+        • Average vulnerability: <strong>{avg_vuln:.1f}/100</strong><br>
+        • Peak vulnerability: <strong>{peak_vuln:.1f}/100</strong><br>
+        • Validated SPA events: <strong>{spa_events_report}</strong> (from Phase 3 notebook)
         </div>
         """, unsafe_allow_html=True)
         
-        # Download button
         try:
             export_df = df_report.copy()
             csv_data = export_df.to_csv(index=False)
@@ -1508,26 +1502,29 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
             st.error(f"Export failed: {e}")
 
 # ============================================================
-# FOOTER
+# FOOTER with time resolution note
 # ============================================================
-st.markdown("<br>", unsafe_allow_html=True)
 st.markdown("""
 <div style='background: #161B22; padding: 15px; border-radius: 8px;
      border: 1px solid #30363D; text-align: center; margin-top: 20px;'>
     <p style='color: #888; margin: 0; font-size: 0.85rem;'>
-        Grid Saver | Adaptive Grid Intelligence Platform |
-        Justine Adzormado |
-        Built with Colab + GitHub + Streamlit Cloud
+        Grid Saver | Adaptive Grid Intelligence Platform | Justine Adzormado
     </p>
     <p style='color: #555; margin: 5px 0 0 0; font-size: 0.75rem;'>
-        📡 Sense: Electricity Maps US-TEX-ERCO 2025 (Academic Access) |
-        🧠 Predict: PJM XGBoost | 91.3% Recall | 24hr Risk Projection |
-        ⚡ Act: Pecan Street Austin TX 2018 | 25 real households |
-        🔒 SPA dual-confirmation: Action only when BOTH Sense AND Predict independently confirm vulnerability
+        📡 Sense: Electricity Maps US-TEX-ERCO 2025 |
+        🧠 Predict: PJM XGBoost | 91.3% Recall |
+        ⚡ Act: Pecan Street Austin TX 2018 | 25 real households
+    </p>
+    <p style='color: #555; font-size: 0.7rem; margin-top: 5px;'>
+        ⏱️ <strong>Temporal resolution:</strong> Analysis is based on hourly intervals.
+        Higher-resolution dispatch (e.g., 5-minute markets) is not modeled.
     </p>
     <p style='color: #444; margin: 8px 0 0 0; font-size: 0.7rem;'>
-        ⚠️ Educational & Research Prototype — Not for real-time grid operations. 
-        Full validation and regulatory review required before deployment.
+        📌 <strong>Note:</strong> Post-intervention rebound load is not explicitly modeled.
+        Future versions will incorporate delayed load recovery dynamics.
+    </p>
+    <p style='color: #444; margin: 5px 0 0 0; font-size: 0.7rem;'>
+        ⚠️ Educational & Research Prototype — Not for real-time grid operations.
     </p>
 </div>
 """, unsafe_allow_html=True)
