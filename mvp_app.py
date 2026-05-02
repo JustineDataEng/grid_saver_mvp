@@ -482,40 +482,12 @@ elif selected_month != 'All Year':
 else:
     df_view = df.copy()
 
-# ============================================================
-# DEBUG: Check what's happening in Live Mode
-# ============================================================
-if live_mode:
-    with st.expander("🔍 Debug Info (Live Mode)"):
-        st.info(f"🟢 Live Mode Active - Showing last 24 hours")
-        st.write(f"📅 Data range: {df_view[DATETIME_COL].min()} to {df_view[DATETIME_COL].max()}")
-        st.write(f"📊 Total rows in view: {len(df_view):,}")
-        st.write(f"🔧 Intervention enabled: {apply_intervention_flag}")
-        
-        # Check SPA events
-        temp_spa = count_spa_events(df_view['spa_action_triggered']) if 'spa_action_triggered' in df_view.columns else 0
-        st.write(f"🎯 SPA events in this period (before act_layer): {temp_spa}")
-        
-        # Check vulnerability scores
-        st.write(f"📈 Vulnerability score range: {df_view['vulnerability_score'].min():.1f} - {df_view['vulnerability_score'].max():.1f}")
-        st.write(f"⚠️ Hours above threshold: {(df_view['vulnerability_score'] >= VULNERABILITY_THRESHOLD).sum()}")
-
 if df_view.empty:
     st.warning("No data available for selected filters.")
     st.stop()
 
 # Run act layer on filtered view with user's settings and intervention toggle
 df_view, total_mw_saved = act_layer(df_view, reduction_rate_percent, homes, apply_intervention_flag)
-
-# ============================================================
-# DEBUG: After act_layer (remove after fixing)
-# ============================================================
-if live_mode:
-    with st.expander("🔍 Debug Info After Act Layer"):
-        st.write(f"✅ SPA events after act_layer: {count_spa_events(df_view['spa_action_triggered'])}")
-        st.write(f"⚡ Total reduction MWh: {df_view['reduction_mw'].sum():.2f}")
-        st.write(f"🔄 Total rebound MWh: {df_view['rebound_mw'].sum():.2f}")
-        st.write(f"📉 Adjusted demand range: {df_view['adjusted_demand_mw'].min():.0f} - {df_view['adjusted_demand_mw'].max():.0f} MW")
 
 # Calculate metrics
 spa_events_view = count_spa_events(df_view['spa_action_triggered'])
@@ -531,7 +503,6 @@ max_spa_peak_reduction = spa_only['reduction_mw'].max() if not spa_only.empty el
 critical_hours = df_view[df_view['vulnerability_score'] >= VULNERABILITY_THRESHOLD]
 avoided_events = int((critical_hours['spa_action_triggered'] == True).sum())
 critical_coverage_pct = (avoided_events / len(critical_hours) * 100) if len(critical_hours) > 0 else 0
-
 
 # ============================================================
 # HEADER
