@@ -516,8 +516,6 @@ if live_mode:
         st.write(f"⚡ Total reduction MWh: {df_view['reduction_mw'].sum():.2f}")
         st.write(f"🔄 Total rebound MWh: {df_view['rebound_mw'].sum():.2f}")
         st.write(f"📉 Adjusted demand range: {df_view['adjusted_demand_mw'].min():.0f} - {df_view['adjusted_demand_mw'].max():.0f} MW")
-# Run act layer with all parameters
-df_view, total_mw_saved = act_layer(df_view, reduction_rate_percent, homes, apply_intervention_flag)
 
 # Calculate metrics
 spa_events_view = count_spa_events(df_view['spa_action_triggered'])
