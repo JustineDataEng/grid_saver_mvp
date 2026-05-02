@@ -1124,6 +1124,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+st.write("🔥 REACHED SECTION 6")
 # ============================================================
 # PEAK ZOOM WINDOW — ±6 hours around peak demand
 # Shows all drop lines and full detail at the critical moment
