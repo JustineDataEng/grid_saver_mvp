@@ -930,12 +930,25 @@ df_view['adjusted_demand_mw'] = df_view['synthetic_demand_mw'] - df_view['reduct
 # CORRECT PEAK REDUCTION — same timestamp comparison
 # Find peak on the BEFORE signal, compare AFTER at same point
 # ============================================================
+# Global peak for chart reference
 peak_idx        = df_view['synthetic_demand_mw'].idxmax()
 peak_time       = df_view.loc[peak_idx, 'Datetime (UTC)']
-original_peak   = df_view.loc[peak_idx, 'synthetic_demand_mw']
-after_peak      = df_view.loc[peak_idx, 'adjusted_demand_mw']
-peak_reduction_mw = original_peak - after_peak
-pct_reduction   = (peak_reduction_mw / original_peak) * 100 if original_peak > 0 else 0
+
+# Peak reduction: find the SPA-triggered hour with highest demand
+# This is where Grid Saver has the most impact
+spa_active_df = df_view[df_view['spa_action_triggered']].copy()
+if not spa_active_df.empty:
+    spa_peak_idx      = spa_active_df['synthetic_demand_mw'].idxmax()
+    original_peak     = spa_active_df.loc[spa_peak_idx, 'synthetic_demand_mw']
+    after_peak        = spa_active_df.loc[spa_peak_idx, 'adjusted_demand_mw']
+    peak_reduction_mw = original_peak - after_peak
+    pct_reduction     = (peak_reduction_mw / original_peak) * 100 if original_peak > 0 else 0
+else:
+    original_peak     = df_view['synthetic_demand_mw'].max()
+    after_peak        = original_peak
+    peak_reduction_mw = 0
+    pct_reduction     = 0
+
 total_mw_removed  = df_view['reduction_mw'].sum()
 spa_view_count    = int(df_view['spa_action_triggered'].sum())
 
@@ -1004,10 +1017,14 @@ fig_before.add_trace(go.Scatter(
     marker=dict(color='#F39C12', size=6, symbol='circle'),
 ))
 # Mark peak timestamp
-fig_before.add_vline(
-    x=str(peak_time), line_dash='dash', line_color='#FFFFFF',
-    annotation_text='Peak Demand', annotation_font_color='#FFFFFF'
-)
+fig_before.add_trace(go.Scatter(
+    x=[peak_time, peak_time],
+    y=[df_view['synthetic_demand_mw'].min(), df_view['synthetic_demand_mw'].max()],
+    mode='lines',
+    name='Peak Demand',
+    line=dict(color='#FFFFFF', width=1.5, dash='dash'),
+    showlegend=True
+))
 fig_before.update_layout(
     paper_bgcolor='#161B22', plot_bgcolor='#161B22',
     font=dict(color='white'),
@@ -1075,10 +1092,14 @@ except Exception:
     pass  # drop lines rendering issue — continue without drop lines
 
 # Mark peak timestamp
-fig_after.add_vline(
-    x=str(peak_time), line_dash='dash', line_color='#FFFFFF',
-    annotation_text='Peak Demand', annotation_font_color='#FFFFFF'
-)
+fig_after.add_trace(go.Scatter(
+    x=[peak_time, peak_time],
+    y=[df_view['synthetic_demand_mw'].min(), df_view['synthetic_demand_mw'].max()],
+    mode='lines',
+    name='Peak Demand',
+    line=dict(color='#FFFFFF', width=1.5, dash='dash'),
+    showlegend=False
+))
 
 fig_after.update_layout(
     paper_bgcolor='#161B22', plot_bgcolor='#161B22',
@@ -1149,10 +1170,14 @@ if not zoom_df.empty:
             )
     except Exception:
         pass  # zoom drop lines rendering issue — continue
-    fig_zoom.add_vline(
-        x=str(peak_time), line_dash='dash', line_color='#FFFFFF',
-        annotation_text='Peak', annotation_font_color='#FFFFFF'
-    )
+    fig_zoom.add_trace(go.Scatter(
+        x=[peak_time, peak_time],
+        y=[zoom_df['synthetic_demand_mw'].min(), zoom_df['synthetic_demand_mw'].max()],
+        mode='lines',
+        name='Peak',
+        line=dict(color='#FFFFFF', width=1.5, dash='dash'),
+        showlegend=False
+    ))
     fig_zoom.update_layout(
         paper_bgcolor='#161B22', plot_bgcolor='#161B22',
         font=dict(color='white'),
