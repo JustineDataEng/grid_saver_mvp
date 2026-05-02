@@ -1268,7 +1268,7 @@ arch = [
      "Coordinate residential HVAC load reduction",
      "3 to 5% targeted precision",
      "Pecan Street 868,096 records",
-     "Human-override safety protocol"),
+     man-override safety protocol"),
 ]
 
 for col, icon, title, bg, color, l1, l2, l3, l4 in arch:
@@ -1277,7 +1277,7 @@ for col, icon, title, bg, color, l1, l2, l3, l4 in arch:
         <div style='background: {bg}22; border: 1px solid {color};
              padding: 20px; border-radius: 10px; text-align: center;
              border-top: 4px solid {color};'>
-            <h2 style='color: {color}; font-size: 2rem; margin: 0;'>{icon}</h2>
+            <h2 style='color: {color}; font-se: 2rem; margin: 0;'>{icon}</h2>
             <h3 style='color: {color}; margin: 10px 0 5px 0;'>{title}</h3>
             <p style='color: #888; font-size: 0.85rem; margin: 0;'>
                 {l1}<br>{l2}<br>{l3}<br>{l4}
@@ -1288,275 +1288,198 @@ for col, icon, title, bg, color, l1, l2, l3, l4 in arch:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
-# SECTION 9 — REPORTS AND INSIGHTS
+# SECTION 9 — REPORTS AND INSIGHTS (HARDENED)
 # ============================================================
-st.markdown("## Reports and Insights")
-if live_mode:
-    st.warning("Reports and Insights is a historical analysis tool. Switch to Analysis Mode to enable reporting features.")
-    st.markdown("*Select a time period below — reporting is available in Analysis Mode only.*")
-else:
-    st.markdown("*Select a time period to view grid performance analysis and download a report.*")
 
+st.markdown("## Reports and Insights")
+
+# Debug toggle (very useful during development)
+debug_mode = st.sidebar.checkbox("Enable Debug Mode", value=False)
+
+def debug_log(msg):
+    if debug_mode:
+        st.write("DEBUG:", msg)
+
+# -------------------------------
+# MODE CHECK
+# -------------------------------
+if live_mode:
+    st.warning("Reports are disabled in Live Mode. Switch to Analysis Mode.")
+    st.stop()
+
+st.markdown("*Select a time period to view grid performance analysis and download a report.*")
+
+# -------------------------------
+# DATA VALIDATION (Sense QA Layer)
+# -------------------------------
+if df is None or df.empty:
+    st.error("Dataset not loaded or empty.")
+    st.stop()
+
+required_base_cols = ['Datetime (UTC)', 'year']
+missing_base = [c for c in required_base_cols if c not in df.columns]
+
+if missing_base:
+    st.error(f"Missing required columns: {missing_base}")
+    st.stop()
+
+# Ensure datetime is correct
+df['Datetime (UTC)'] = pd.to_datetime(df['Datetime (UTC)'], errors='coerce')
+
+# -------------------------------
+# FILTER SELECTION
+# -------------------------------
 col_r1, col_r2, col_r3 = st.columns(3)
 
 with col_r1:
-    report_type = st.selectbox(
-        "Report Type",
-        ["Yearly", "Monthly", "Weekly"],
-        key="report_type"
-    )
+    report_type = st.selectbox("Report Type", ["Yearly", "Monthly", "Weekly"])
 
 with col_r2:
-    report_year = st.selectbox(
-        "Year",
-        sorted(df['year'].unique(), reverse=True),
-        key="report_year"
-    )
+    report_year = st.selectbox("Year", sorted(df['year'].unique(), reverse=True))
 
 with col_r3:
-    if report_type == "Monthly":
-        available_months = sorted(df[df['year'] == report_year]['month'].unique())
-        month_display    = [MONTH_NAMES[m] for m in available_months]
-        selected_month_name = st.selectbox("Month", month_display, key="report_month")
-        report_month = [k for k, v in MONTH_NAMES.items() if v == selected_month_name][0]
-    elif report_type == "Weekly":
-        available_weeks = sorted(df[df['year'] == report_year]['week'].unique())
-        # Build week labels with day names for clarity
-        week_labels = {}
-        for w in available_weeks:
-            week_df = df[(df['year'] == report_year) & (df['week'] == w)]
-            if not week_df.empty:
-                start_date = week_df['Datetime (UTC)'].min().date()
-                end_date   = week_df['Datetime (UTC)'].max().date()
-                week_labels[w] = f"Week {w} ({start_date} to {end_date})"
-            else:
-                week_labels[w] = f"Week {w}"
-        selected_week_label = st.selectbox(
-            "Select Week",
-            options=list(week_labels.values()),
-            key="report_week"
-        )
-        report_week = next(k for k, v in week_labels.items() if v == selected_week_label)
-    else:
-        st.markdown("")
+    report_month, report_week = None, None
 
-if report_type == "Yearly":
-    df_report    = df[df['year'] == report_year].copy()
-    period_label = f"{report_year}"
-elif report_type == "Monthly":
-    df_report    = df[(df['year'] == report_year) & (df['month'] == report_month)].copy()
-    period_label = f"{MONTH_NAMES[report_month]} {report_year}"
-elif report_type == "Weekly":
-    df_report    = df[(df['year'] == report_year) & (df['week'] == report_week)].copy()
-    if not df_report.empty:
-        start_day = DAY_NAMES[int(df_report['day_of_week'].iloc[0])]
-        end_day   = DAY_NAMES[int(df_report['day_of_week'].iloc[-1])]
-        period_label = f"Week {report_week}, {report_year} ({start_day} to {end_day})"
+    if report_type == "Monthly":
+        if 'month' not in df.columns:
+            st.error("Month column missing.")
+            st.stop()
+
+        available_months = sorted(df[df['year'] == report_year]['month'].unique())
+        month_display = [MONTH_NAMES[m] for m in available_months]
+
+        selected_month_name = st.selectbox("Month", month_display)
+        report_month = [k for k, v in MONTH_NAMES.items() if v == selected_month_name][0]
+
+    elif report_type == "Weekly":
+        if 'week' not in df.columns:
+            st.error("Week column missing.")
+            st.stop()
+
+        available_weeks = sorted(df[df['year'] == report_year]['week'].unique())
+        report_week = st.selectbox("Week", available_weeks)
+
+# -------------------------------
+# FILTER DATA
+# -------------------------------
+try:
+    if report_type == "Yearly":
+        df_report = df[df['year'] == report_year].copy()
+        period_label = f"{report_year}"
+
+    elif report_type == "Monthly":
+        df_report = df[(df['year'] == report_year) & (df['month'] == report_month)].copy()
+        period_label = f"{MONTH_NAMES[report_month]} {report_year}"
+
     else:
+        df_report = df[(df['year'] == report_year) & (df['week'] == report_week)].copy()
         period_label = f"Week {report_week}, {report_year}"
 
+except Exception as e:
+    st.error(f"Filtering failed: {e}")
+    st.stop()
+
 if df_report.empty:
-    st.warning("No data available for the selected period.")
-else:
-    avg_vulnerability  = df_report['vulnerability_score'].mean()
-    peak_vulnerability = df_report['vulnerability_score'].max()
-    low_vulnerability  = df_report['vulnerability_score'].min()
-    high_risk_events   = int((df_report['vulnerability_score'] >= 70).sum())
-    warning_events     = int(
-        ((df_report['vulnerability_score'] >= 40) &
-         (df_report['vulnerability_score'] < 70)).sum()
-    )
-    stable_hours       = int((df_report['vulnerability_score'] < 40).sum())
-    total_hours_report = len(df_report)
+    st.warning("No data available for selected period.")
+    st.stop()
 
-    # Run act_layer on report period to get SPA metrics
+debug_log(f"Filtered rows: {len(df_report)}")
+
+# -------------------------------
+# REQUIRED ANALYSIS COLUMNS CHECK
+# -------------------------------
+required_cols = ['vulnerability_score', 'grid_status']
+missing_cols = [c for c in required_cols if c not in df_report.columns]
+
+if missing_cols:
+    st.error(f"Missing analysis columns: {missing_cols}")
+    st.stop()
+
+# Clean NaNs
+df_report = df_report.dropna(subset=['vulnerability_score'])
+
+# -------------------------------
+# METRICS
+# -------------------------------
+avg_vulnerability  = df_report['vulnerability_score'].mean()
+peak_vulnerability = df_report['vulnerability_score'].max()
+low_vulnerability  = df_report['vulnerability_score'].min()
+
+high_risk_events = int((df_report['vulnerability_score'] >= 70).sum())
+warning_events   = int(((df_report['vulnerability_score'] >= 40) & (df_report['vulnerability_score'] < 70)).sum())
+stable_hours     = int((df_report['vulnerability_score'] < 40).sum())
+
+# -------------------------------
+# ACT LAYER (SAFE EXECUTION)
+# -------------------------------
+try:
     spa_report_df, _ = act_layer(df_report, REDUCTION_RATE, NUM_HOMES)
-    spa_events_report  = int(spa_report_df['spa_action_triggered'].sum())
-    total_mwh_report   = spa_report_df['reduction_mw'].sum()
-    total_co2_report   = (spa_report_df[CARBON_COL] * spa_report_df['reduction_mw']).sum() / 1000
-    total_cost_report  = total_mwh_report * 100
 
-    st.markdown(f"**Showing: {period_label}** — {total_hours_report:,} hours analysed")
-    st.markdown("<br>", unsafe_allow_html=True)
+    spa_events_report = int(spa_report_df['spa_action_triggered'].sum())
+    total_mwh_report  = spa_report_df['reduction_mw'].sum()
 
-    col_m1, col_m2, col_m3, col_m4, col_m5, col_m6 = st.columns(6)
-    report_cards = [
-        (col_m1, f"{avg_vulnerability:.1f}",  "/100",  "Average Vulnerability", "white"),
-        (col_m2, f"{peak_vulnerability:.1f}", "/100",  "Peak Vulnerability",    "#E74C3C"),
-        (col_m3, f"{low_vulnerability:.1f}",  "/100",  "Lowest Score",          "#2ECC71"),
-        (col_m4, f"{high_risk_events:,}",     "hours", "Critical Events",       "#E74C3C"),
-        (col_m5, f"{warning_events:,}",       "hours", "Warning Events",        "#F39C12"),
-        (col_m6, f"{stable_hours:,}",         "hours", "Stable Hours",          "#2ECC71"),
-    ]
-    for col, val, sub, label, color in report_cards:
-        with col:
-            st.markdown(f"""
-            <div class='metric-card'>
-                <h2 style='color: {color}; font-size: 1.4rem; margin: 0;'>{val}</h2>
-                <p style='color: #666; margin: 2px 0; font-size: 0.75rem;'>{sub}</p>
-                <p style='color: #888; margin: 0; font-size: 0.75rem;'>{label}</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # SPA action metrics for this report period
-    col_spa1, col_spa2, col_spa3 = st.columns(3)
-    spa_report_cards = [
-        (col_spa1, f"{spa_events_report:,}",       "events",      "SPA Actions (Dual-Confirmed)",    "#F39C12"),
-        (col_spa2, f"{total_mwh_report:.2f}",      "MWh",         "Energy Saved",                    "#2ECC71"),
-        (col_spa3, f"{total_co2_report:.3f}",      "tons",        "CO₂ Avoided",                "#4A9EFF"),
-    ]
-    for col, val, sub, label, color in spa_report_cards:
-        with col:
-            st.markdown(f"""
-            <div class='metric-card'>
-                <h2 style='color: {color}; font-size: 1.4rem; margin: 0;'>{val}</h2>
-                <p style='color: #666; margin: 2px 0; font-size: 0.75rem;'>{sub}</p>
-                <p style='color: #888; margin: 0; font-size: 0.75rem;'>{label}</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    col_trend, col_dist = st.columns([2, 1])
-
-    with col_trend:
-        # Weekly view: show day names on x axis
-        if report_type == "Weekly":
-            df_report['day_name'] = df_report['day_of_week'].map(DAY_NAMES)
-            daily_vuln_report = df_report.groupby('day_name')['vulnerability_score'].mean().round(1)
-            day_order_names   = [DAY_NAMES[i] for i in range(7) if DAY_NAMES[i] in daily_vuln_report.index]
-            daily_vuln_report = daily_vuln_report.reindex(day_order_names)
-            fig_trend = go.Figure(go.Bar(
-                x=daily_vuln_report.index,
-                y=daily_vuln_report.values,
-                marker_color=[
-                    '#E74C3C' if s >= 70 else '#F39C12' if s >= 40 else '#2ECC71'
-                    for s in daily_vuln_report.values
-                ]
-            ))
-        else:
-            fig_trend = go.Figure()
-            fig_trend.add_trace(go.Scatter(
-                x=df_report['Datetime (UTC)'],
-                y=df_report['vulnerability_score'],
-                mode='lines',
-                name='Vulnerability Score',
-                line=dict(color='#4A9EFF', width=1.2),
-                fill='tozeroy',
-                fillcolor='rgba(74, 158, 255, 0.1)'
-            ))
-
-        fig_trend.add_hline(
-            y=VULNERABILITY_THRESHOLD,
-            line_dash='dash', line_color='#E74C3C',
-            annotation_text=f'Threshold ({VULNERABILITY_THRESHOLD:.0f})',
-            annotation_font_color='#E74C3C'
-        )
-        fig_trend.update_layout(
-            paper_bgcolor='#161B22', plot_bgcolor='#161B22',
-            font=dict(color='white'),
-            title=dict(
-                text=f'Vulnerability Trend — {period_label}',
-                font=dict(color='white', size=13)
-            ),
-            xaxis=dict(gridcolor='#30363D', color='#888'),
-            yaxis=dict(
-                gridcolor='#30363D', color='#888',
-                title='Vulnerability Score (0 to 100)',
-                range=[0, 100]
-            ),
-            height=300, margin=dict(t=50, b=30),
-        )
-        st.plotly_chart(fig_trend, use_container_width=True)
-
-    with col_dist:
-        status_counts = df_report['grid_status'].value_counts()
-        dist_colors   = {'STABLE': '#2ECC71', 'WARNING': '#F39C12', 'CRITICAL': '#E74C3C'}
-        fig_dist = go.Figure(go.Pie(
-            labels=status_counts.index,
-            values=status_counts.values,
-            marker_colors=[dist_colors.get(s, '#888') for s in status_counts.index],
-            hole=0.4,
-            textfont=dict(color='white', size=12)
-        ))
-        fig_dist.update_layout(
-            paper_bgcolor='#161B22',
-            font=dict(color='white'),
-            title=dict(text='Grid Status Distribution', font=dict(color='white', size=13)),
-            legend=dict(bgcolor='#1A1A2E', bordercolor='#333'),
-            height=300, margin=dict(t=50, b=10),
-        )
-        st.plotly_chart(fig_dist, use_container_width=True)
-
-    st.markdown("### Insight Summary")
-
-    # Data-driven narrative using actual signals and SPA outputs
-    peak_hours_df   = df_report.nlargest(5, 'vulnerability_score')
-    peak_timestamps = peak_hours_df['Datetime (UTC)'].dt.strftime('%b %d %H:%M').tolist()
-
-    if avg_vulnerability >= 70:
-        insight = (
-            f"Grid conditions were consistently critical during {period_label}, "
-            f"with average vulnerability at {avg_vulnerability:.1f}/100."
-        )
-    elif avg_vulnerability >= 40:
-        insight = (
-            f"Grid showed moderate vulnerability during {period_label}, "
-            f"averaging {avg_vulnerability:.1f}/100 with recurring warning signals."
-        )
+    if CARBON_COL in spa_report_df.columns:
+        total_co2_report = (spa_report_df[CARBON_COL] * spa_report_df['reduction_mw']).sum() / 1000
     else:
-        insight = (
-            f"Grid conditions remained largely stable during {period_label}, "
-            f"averaging {avg_vulnerability:.1f}/100."
-        )
+        total_co2_report = 0
 
-    if peak_timestamps:
-        insight += (
-            f" Peak stress occurred at: {', '.join(peak_timestamps[:3])}, "
-            f"aligning with elevated carbon intensity and reduced clean energy availability."
-        )
+except Exception as e:
+    st.error(f"Act layer failed: {e}")
+    debug_log(spa_report_df.head() if 'spa_report_df' in locals() else "No SPA DF")
+    st.stop()
 
-    if spa_events_report > 0:
-        insight += (
-            f" Grid Saver would have triggered {spa_events_report:,} dual-confirmed "
-            f"intervention{'s' if spa_events_report > 1 else ''} in this period, "
-            f"delivering approximately {total_mwh_report:.2f} MWh in savings "
-            f"and avoiding {total_co2_report:.3f} tons of CO₂."
-        )
-    else:
-        insight += " No SPA interventions were triggered — grid conditions did not meet dual-confirmation threshold."
+# -------------------------------
+# DISPLAY METRICS
+# -------------------------------
+st.markdown(f"**Showing: {period_label}** — {len(df_report):,} hours analysed")
 
-    st.info(insight)
+col1, col2, col3 = st.columns(3)
+col1.metric("Avg Vulnerability", f"{avg_vulnerability:.1f}")
+col2.metric("Peak", f"{peak_vulnerability:.1f}")
+col3.metric("SPA Actions", f"{spa_events_report:,}")
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    # Full SPA pipeline export — includes all three layer outputs
-    spa_export_df = spa_report_df.copy()
-    report_export_cols = [
-        col for col in [
-            'Datetime (UTC)', CARBON_COL, CFE_COL,
-            'vulnerability_score', 'vulnerability_event', 'grid_status',
-            'vuln_probability', 'predict_triggered',
-            'sense_triggered', 'spa_action_triggered', 'reduction_mw',
-            'hour', 'month', 'month_name'
-        ] if col in spa_export_df.columns
-    ]
-    csv_data = spa_export_df[report_export_cols].to_csv(index=False)
+# -------------------------------
+# CHART (SAFE)
+# -------------------------------
+try:
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df_report['Datetime (UTC)'],
+        y=df_report['vulnerability_score'],
+        mode='lines'
+    ))
+    st.plotly_chart(fig, use_container_width=True)
+
+except Exception as e:
+    st.error(f"Chart failed: {e}")
+
+# -------------------------------
+# INSIGHT SUMMARY
+# -------------------------------
+insight = f"Average vulnerability: {avg_vulnerability:.1f}/100. "
+
+if spa_events_report > 0:
+    insight += f"{spa_events_report} interventions triggered, saving {total_mwh_report:.2f} MWh."
+else:
+    insight += "No interventions triggered."
+
+st.info(insight)
+
+# -------------------------------
+# EXPORT (SAFE)
+# -------------------------------
+try:
+    export_df = spa_report_df.copy()
+    csv_data = export_df.to_csv(index=False)
+
     st.download_button(
-        label="Download Report (CSV)",
+        "Download Report",
         data=csv_data,
-        file_name=f"Grid Saver {report_type} {period_label} Report.csv",
-        mime="text/csv"
-    )
-    st.markdown(
-        "<p style='color:#555; font-size:0.75rem; margin-top:4px;'>"
-        "This report includes full SPA pipeline outputs (Sense, Predict, Act layers) "
-        "and can support grid audits, demand response planning, and regulatory analysis."
-        "</p>",
-        unsafe_allow_html=True
+        file_name=f"GridSaver_{period_label}.csv"
     )
 
+except Exception as e:
+    st.error(f"Export failed: {e}")
 # ============================================================
 # FOOTER
 # ============================================================
