@@ -515,29 +515,59 @@ st.markdown("<br>", unsafe_allow_html=True)
 # RISK DRIVERS (Explain WHY the grid is stressed)
 # ============================================================
 st.markdown("## ⚠️ Risk Drivers")
-drivers = []
-
-# Relative (not absolute) comparisons for defensibility
-if current_carbon > df[CARBON_COL].quantile(0.75):
-    drivers.append("Carbon intensity is elevated relative to baseline")
-
-if current_cfe < df[CFE_COL].quantile(0.25):
-    drivers.append("Carbon-free energy contribution is below typical levels")
-
-if current_score >= 70:
-    drivers.append("System operating in CRITICAL vulnerability range")
-
-if current_prob >= DECISION_THRESHOLD:
-    drivers.append("Short-term risk projection is elevated")
-
-if drivers:
-    for d in drivers:
-        st.markdown(f"- {d}")
-else:
-    st.markdown("No significant risk drivers detected — grid conditions within normal range.")
-
+drivers = get_risk_drivers(current_row, VULNERABILITY_THRESHOLD, df)
+for driver in drivers:
+    st.markdown(f"- {driver}")
 st.markdown("<br>", unsafe_allow_html=True)
 
+
+def get_risk_drivers(row, vulnerability_threshold, df_full):
+    """
+    Explains WHY the grid is stressed.
+    
+    Step 1: Fixed thresholds (40/70) from notebook validation.
+    Step 2: Relative positioning within observed data range.
+    """
+    drivers = []
+    score  = row['vulnerability_score']
+    carbon = row[CARBON_COL]
+    cfe    = row[CFE_COL]
+
+    # Step 1 — classify using score only (matches sense_layer exactly)
+    if score >= 70:
+        drivers.append("🔴 Grid is in CRITICAL state — vulnerability score at 70 or above")
+    elif score >= 40:
+        drivers.append("🟡 Grid is in WARNING state — vulnerability score between 40 and 69")
+    else:
+        drivers.append("🟢 Grid is STABLE — vulnerability score below 40")
+
+    # Step 2 — explain using relative signal positioning
+    # Carbon intensity: position within actual observed range
+    carbon_min = df_full[CARBON_COL].min()
+    carbon_max = df_full[CARBON_COL].max()
+    carbon_range = carbon_max - carbon_min if (carbon_max - carbon_min) != 0 else 1
+    carbon_pct = (carbon - carbon_min) / carbon_range
+
+    # CFE: position within actual observed range
+    cfe_max = df_full[CFE_COL].max()
+    cfe_pct = cfe / cfe_max if cfe_max != 0 else 0
+
+    if carbon_pct > 0.7:
+        drivers.append("🔴 Carbon intensity is in the upper 30% of observed range — grid running heavily on fossil fuels")
+    elif carbon_pct > 0.4:
+        drivers.append("🟡 Carbon intensity is above the mid-range — fossil fuel contribution elevated")
+    else:
+        drivers.append("🟢 Carbon intensity is in the lower range — cleaner generation mix")
+
+    if cfe_pct < 0.3:
+        drivers.append("🔴 Carbon-free energy is in the lower 30% of observed range — clean supply buffer low")
+    elif cfe_pct < 0.6:
+        drivers.append("🟡 Carbon-free energy is below mid-range — moderate clean supply")
+    else:
+        drivers.append("🟢 Carbon-free energy is strong — healthy clean supply buffer")
+
+    return drivers
+    
 # ============================================================
 # VULNERABILITY TREND CHART
 # ============================================================
