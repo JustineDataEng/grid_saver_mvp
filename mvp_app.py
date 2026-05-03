@@ -514,11 +514,6 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ============================================================
 # RISK DRIVERS (Explain WHY the grid is stressed)
 # ============================================================
-st.markdown("## ⚠️ Risk Drivers")
-drivers = get_risk_drivers(current_row, VULNERABILITY_THRESHOLD, df)
-for driver in drivers:
-    st.markdown(f"- {driver}")
-st.markdown("<br>", unsafe_allow_html=True)
 
 
 def get_risk_drivers(row, vulnerability_threshold, df_full):
@@ -567,7 +562,14 @@ def get_risk_drivers(row, vulnerability_threshold, df_full):
         drivers.append("🟢 Carbon-free energy is strong — healthy clean supply buffer")
 
     return drivers
-    
+
+
+st.markdown("## ⚠️ Risk Drivers")
+drivers = get_risk_drivers(current_row, VULNERABILITY_THRESHOLD, df)
+for driver in drivers:
+    st.markdown(f"- {driver}")
+st.markdown("<br>", unsafe_allow_html=True)
+
 # ============================================================
 # VULNERABILITY TREND CHART
 # ============================================================
