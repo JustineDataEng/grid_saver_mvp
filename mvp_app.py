@@ -1087,7 +1087,8 @@ st.markdown(f"""
         📌 Notebook validated SPA events: {NOTEBOOK_SPA_EVENTS} per year → annual gross {ANNUAL_GROSS_MWH:,.0f} MWh, net {ANNUAL_NET_MWH:,.0f} MWh
     </p>
     <p style='color: #444; margin: 5px 0 0 0; font-size: 0.7rem;'>
-        ⚠️ Educational Prototype — Not for real‑time operations.
+        ⚠️ Production readiness requires live SCADA integration and regulatory approval.
+        Current version operates on historical data with validated models.
     </p>
 </div>
 """, unsafe_allow_html=True)
