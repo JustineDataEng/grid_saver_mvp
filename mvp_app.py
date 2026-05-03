@@ -31,6 +31,13 @@ st.markdown("""
         border: 1px solid #30363D;
         text-align: center;
     }
+    .text-box-horizontal {
+        background: #161B22;
+        border-radius: 10px;
+        padding: 16px;
+        border: 1px solid #30363D;
+        text-align: center;
+    }
     h1, h2, h3 { color: white !important; }
     .stMarkdown { color: #CCCCCC; }
     .info-box {
@@ -456,7 +463,7 @@ current_row = df_view.iloc[-1]
 # HEADER
 # ============================================================
 mode_label = "🔴 LIVE MODE (Last 24h)" if live_mode else "📊 ANALYSIS MODE (Full Year)"
-mode_color = "#2ECC71" if live_mode else "#2ECC71"
+mode_color = "#E74C3C" if live_mode else "#E74C3C"
 
 st.markdown(f"""
 <div style='background: linear-gradient(135deg, #1B4F8C, #0D1117); padding: 30px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #30363D;'>
@@ -501,6 +508,33 @@ with col5:
     st.markdown(f"<div class='metric-card'><h2 style='color: #4A9EFF; font-size: 1.6rem; margin: 0;'>{vulnerable_pct:.1f}%</h2><p style='color: #666; margin: 2px 0; font-size: 0.75rem;'>of period</p><p style='color: #888; margin: 0; font-size: 0.75rem;'>Vulnerability Rate</p></div>", unsafe_allow_html=True)
 with col6:
     st.markdown(f"<div class='metric-card'><h2 style='color: #9B59B6; font-size: 1.6rem; margin: 0;'>{current_prob:.2f}</h2><p style='color: #666; margin: 2px 0; font-size: 0.75rem;'>probability</p><p style='color: #888; margin: 0; font-size: 0.75rem;'>24hr Risk Projection</p></div>", unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ============================================================
+# RISK DRIVERS (Explain WHY the grid is stressed)
+# ============================================================
+st.markdown("## ⚠️ Risk Drivers")
+drivers = []
+
+# Relative (not absolute) comparisons for defensibility
+if current_carbon > df[CARBON_COL].quantile(0.75):
+    drivers.append("Carbon intensity is elevated relative to baseline")
+
+if current_cfe < df[CFE_COL].quantile(0.25):
+    drivers.append("Carbon-free energy contribution is below typical levels")
+
+if current_score >= 70:
+    drivers.append("System operating in CRITICAL vulnerability range")
+
+if current_prob >= DECISION_THRESHOLD:
+    drivers.append("Short-term risk projection is elevated")
+
+if drivers:
+    for d in drivers:
+        st.markdown(f"- {d}")
+else:
+    st.markdown("No significant risk drivers detected — grid conditions within normal range.")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -614,34 +648,35 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-if st.button("🧠 Explain Grid Decision"):
-    risk_color = {"CRITICAL":"#E74C3C", "WARNING":"#F39C12", "STABLE":"#2ECC71"}.get(current_status_text, "#CCC")
-    st.markdown(f"""
-    <div style='background:#161B22; border:1px solid #1B4F8C; padding:25px; border-radius:10px; margin-top:15px;'>
-        <h3 style='color:#4A9EFF; margin:0 0 15px 0;'>🧠 AI Decision Explanation</h3>
-        <p style='color:#CCC; margin:5px 0;'>
-            Grid Saver classified the system as
-            <strong style='color:{action_color};'>{current_status_text}</strong> based on:
-        </p>
-        <ul style='color:#CCC; margin:10px 0;'>
-            <li><strong>Vulnerability Score:</strong> {current_score:.1f} / 100 (threshold: {VULNERABILITY_THRESHOLD:.0f})</li>
-            <li><strong>Carbon Intensity:</strong> {current_carbon:.0f} gCO₂eq/kWh</li>
-            <li><strong>Carbon-Free Energy:</strong> {current_cfe:.1f}%</li>
-            <li><strong>24hr Risk Projection:</strong> {current_prob:.2f} (threshold: {DECISION_THRESHOLD})</li>
-            <li><strong>Risk Level:</strong> <span style='color:{risk_color};'>{current_status_text}</span></li>
-        </ul>
-        <p style='color:#CCC; margin:10px 0 5px 0;'>
-            <strong>Recommended Action:</strong> {action_text}
-        </p>
-        <p style='color:#888; margin:0; font-size:0.9rem;'>Monitoring window: Next 2-4 hours | Pre-emptive coordination recommended</p>
-        <p style='color:#555; margin:15px 0 0 0; font-size:0.8rem;'>
-            <strong>Reserve Margin Impact:</strong> A {reduction_rate_percent}% HVAC reduction across {homes:,} homes removes approximately {(homes * 0.092 * (reduction_rate_percent/4)):,.1f} kW from peak demand, contributing to restoring the grid toward safe operating bounds.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+with st.expander("🧠 AI Decision Explanation", expanded=False):
+    if st.button("Explain Grid Decision", key="explain_btn"):
+        risk_color = {"CRITICAL":"#E74C3C", "WARNING":"#F39C12", "STABLE":"#2ECC71"}.get(current_status_text, "#CCC")
+        st.markdown(f"""
+        <div style='background:#161B22; border:1px solid #1B4F8C; padding:25px; border-radius:10px; margin-top:15px;'>
+            <h3 style='color:#4A9EFF; margin:0 0 15px 0;'>🧠 AI Decision Explanation</h3>
+            <p style='color:#CCC; margin:5px 0;'>
+                Grid Saver classified the system as
+                <strong style='color:{action_color};'>{current_status_text}</strong> based on:
+            </p>
+            <ul style='color:#CCC; margin:10px 0;'>
+                <li><strong>Vulnerability Score:</strong> {current_score:.1f} / 100 (threshold: {VULNERABILITY_THRESHOLD:.0f})</li>
+                <li><strong>Carbon Intensity:</strong> {current_carbon:.0f} gCO₂eq/kWh</li>
+                <li><strong>Carbon-Free Energy:</strong> {current_cfe:.1f}%</li>
+                <li><strong>24hr Risk Projection:</strong> {current_prob:.2f} (threshold: {DECISION_THRESHOLD})</li>
+                <li><strong>Risk Level:</strong> <span style='color:{risk_color};'>{current_status_text}</span></li>
+            </ul>
+            <p style='color:#CCC; margin:10px 0 5px 0;'>
+                <strong>Recommended Action:</strong> {action_text}
+            </p>
+            <p style='color:#888; margin:0; font-size:0.9rem;'>Monitoring window: Next 2-4 hours | Pre-emptive coordination recommended</p>
+            <p style='color:#555; margin:15px 0 0 0; font-size:0.8rem;'>
+                <strong>Reserve Margin Impact:</strong> A {reduction_rate_percent}% HVAC reduction across {homes:,} homes removes approximately {(homes * 0.092 * (reduction_rate_percent/4)):,.1f} kW from peak demand, contributing to restoring the grid toward safe operating bounds.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
 
 # ============================================================
-# SMART RECOMMENDATIONS
+# SMART RECOMMENDATIONS (Operator-grade actions)
 # ============================================================
 st.markdown("## 🧠 Smart Recommendations")
 dispatch_score = current_score * 0.5 + current_prob * 30 + min(current_carbon/10, 20)
@@ -657,19 +692,33 @@ st.markdown(f"""
 
 if current_status_text == 'CRITICAL':
     if apply_intervention_flag:
-        st.markdown(f"🔴 Execute {reduction_rate_percent}% HVAC reduction (~{SYSTEM_REDUCTION_MW:.0f} MW per event)")
+        st.markdown(f"""
+🔴 **Operator Action Required**
+- Dispatch {reduction_rate_percent}% residential HVAC demand response (~{SYSTEM_REDUCTION_MW:.0f} MW per event)
+- Target peak window (next 1–2 hours)
+- Monitor rebound risk following load reduction
+""")
         if current_row.get('spa_action_triggered', False):
             st.markdown("✅ SPA dual-confirmation achieved — dispatch approved")
         else:
             st.markdown("⚠️ Partial confirmation — controlled reduction recommended")
     else:
-        st.markdown("🔴 Grid Saver OFF — enable to see intervention recommendations")
+        st.markdown("🔴 Grid Saver OFF — enable intervention to allow dispatch actions")
 elif current_status_text == 'WARNING':
-    st.markdown("🟡 Pre-stage demand response resources")
-    if current_prob >= 0.4:
-        st.markdown("📈 Risk signal elevated — prepare for activation")
+    st.markdown("""
+🟡 **Operator Advisory**
+- Pre-stage demand response resources
+- Increase monitoring frequency
+- Prepare for potential dispatch within next 2–4 hours
+""")
+    if current_prob >= DECISION_THRESHOLD:
+        st.markdown("📈 Elevated risk signal — escalation likely")
 else:
-    st.markdown("🟢 No intervention required — monitor grid conditions")
+    st.markdown("""
+🟢 **Operator Status**
+- No intervention required
+- Maintain standard monitoring
+""")
 
 if apply_intervention_flag:
     st.markdown(f"""
@@ -751,12 +800,39 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
-# Peak reduction cards (using observed data)
-col_p1, col_p2, col_p3, col_p4 = st.columns(4)
-col_p1.metric("Observed Peak", f"{peak_observed:,.0f} MW")
-col_p2.metric("After Grid Saver", f"{peak_optimized:,.0f} MW")
-col_p3.metric("Peak Reduction", f"{peak_reduction_pct:.2f}%")
-col_p4.metric("Peak Load Shed", f"{peak_reduction_mw:,.2f} MW")
+# Peak reduction – horizontal text boxes for Observed Peak and After Grid Saver
+col_peak1, col_peak2 = st.columns(2)
+with col_peak1:
+    st.markdown(f"""
+    <div class='text-box-horizontal'>
+        <p style='color:#888; margin:0; font-size:0.8rem;'>Observed Peak</p>
+        <h2 style='color:#E74C3C; margin:0;'>{peak_observed:,.0f} MW</h2>
+    </div>
+    """, unsafe_allow_html=True)
+with col_peak2:
+    st.markdown(f"""
+    <div class='text-box-horizontal'>
+        <p style='color:#888; margin:0; font-size:0.8rem;'>After Grid Saver</p>
+        <h2 style='color:#2ECC71; margin:0;'>{peak_optimized:,.0f} MW</h2>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Keep reduction percentage and load shed as metric cards (optional, you can keep them)
+col_p3, col_p4 = st.columns(2)
+with col_p3:
+    st.markdown(f"""
+    <div class='metric-card'>
+        <h2 style='color:#4A9EFF; font-size:1.4rem; margin:0;'>{peak_reduction_pct:.2f}%</h2>
+        <p style='color:#888; margin:0;'>Peak Reduction</p>
+    </div>
+    """, unsafe_allow_html=True)
+with col_p4:
+    st.markdown(f"""
+    <div class='metric-card'>
+        <h2 style='color:#F39C12; font-size:1.4rem; margin:0;'>{peak_reduction_mw:,.2f} MW</h2>
+        <p style='color:#888; margin:0;'>Peak Load Shed</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 if apply_intervention_flag:
     st.markdown(f"""
@@ -909,7 +985,7 @@ with st.expander("📉 6-Hour Before vs After Analysis (around peak demand)"):
         st.info("No data available in the 6‑hour window around the peak.")
 
 # ============================================================
-# IMPACT AT SCALE (four square boxes horizontally)
+# IMPACT AT SCALE (four square boxes horizontally, plus Impact Level)
 # ============================================================
 st.divider()
 st.markdown("## 📊 Impact at Scale")
@@ -948,6 +1024,21 @@ with col_i4:
         <p style='color: #888; margin: 0;'>Grid Impact</p>
     </div>
     """, unsafe_allow_html=True)
+
+# Impact Level text box
+if homes < 100000:
+    impact_level = "City-scale"
+elif homes < 500000:
+    impact_level = "Regional-scale"
+else:
+    impact_level = "National-scale"
+
+st.markdown(f"""
+<div class='text-box-horizontal' style='margin-top: 10px;'>
+    <p style='color:#888; margin:0; font-size:0.8rem;'>Impact Level (scenario)</p>
+    <h2 style='color:#4A9EFF; margin:0;'>{impact_level}</h2>
+</div>
+""", unsafe_allow_html=True)
 
 st.markdown("""
 <div class='warning-box'>
