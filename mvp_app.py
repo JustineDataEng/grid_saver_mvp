@@ -350,7 +350,7 @@ if live_mode:
         unsafe_allow_html=True
     )
     st.sidebar.markdown(
-        "<p style='color:#888; font-size:0.7rem;'>Note: vulnerability threshold uses full‑year data, not the last 24 hours.</p>",
+        "<p style='color:#888; font-size:0.7rem;'>Note: Threshold is based on full-year data to ensure consistent benchmarking.</p>",
         unsafe_allow_html=True
     )
 
