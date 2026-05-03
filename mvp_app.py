@@ -805,15 +805,15 @@ col_peak1, col_peak2 = st.columns(2)
 with col_peak1:
     st.markdown(f"""
     <div class='text-box-horizontal'>
-        <p style='color:#888; margin:0; font-size:0.8rem;'>Observed Peak</p>
-        <h2 style='color:#E74C3C; margin:0;'>{peak_observed:,.0f} MW</h2>
+        <p style='color:#888; margin:0; font-size:1.2rem;'>Observed Peak</p>
+        <h3 style='color:#E74C3C; margin:0;'>{peak_observed:,.0f} MW</h2>
     </div>
     """, unsafe_allow_html=True)
 with col_peak2:
     st.markdown(f"""
     <div class='text-box-horizontal'>
-        <p style='color:#888; margin:0; font-size:0.8rem;'>After Grid Saver</p>
-        <h2 style='color:#2ECC71; margin:0;'>{peak_optimized:,.0f} MW</h2>
+        <p style='color:#888; margin:0; font-size:1.2rem;'>After Grid Saver</p>
+        <h3 style='color:#2ECC71; margin:0;'>{peak_optimized:,.0f} MW</h2>
     </div>
     """, unsafe_allow_html=True)
 
@@ -822,14 +822,14 @@ col_p3, col_p4 = st.columns(2)
 with col_p3:
     st.markdown(f"""
     <div class='metric-card'>
-        <h2 style='color:#4A9EFF; font-size:1.4rem; margin:0;'>{peak_reduction_pct:.2f}%</h2>
+        <h3 style='color:#4A9EFF; font-size:1.2rem; margin:0;'>{peak_reduction_pct:.2f}%</h2>
         <p style='color:#888; margin:0;'>Peak Reduction</p>
     </div>
     """, unsafe_allow_html=True)
 with col_p4:
     st.markdown(f"""
     <div class='metric-card'>
-        <h2 style='color:#F39C12; font-size:1.4rem; margin:0;'>{peak_reduction_mw:,.2f} MW</h2>
+        <h3 style='color:#F39C12; font-size:1.2rem; margin:0;'>{peak_reduction_mw:,.2f} MW</h2>
         <p style='color:#888; margin:0;'>Peak Load Shed</p>
     </div>
     """, unsafe_allow_html=True)
