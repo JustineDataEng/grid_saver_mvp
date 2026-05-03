@@ -345,8 +345,14 @@ st.sidebar.divider()
 
 live_mode = st.sidebar.toggle("Recent Window View (Last 24 Hours)", value=False)
 if live_mode:
-    st.sidebar.markdown("<p style='color:#2ECC71; font-size:0.8rem;'>Showing the most recent 24 hours</p>",
-                        unsafe_allow_html=True)
+    st.sidebar.markdown(
+        "<p style='color:#2ECC71; font-size:0.8rem;'>Showing the most recent 24 hours</p>",
+        unsafe_allow_html=True
+    )
+    st.sidebar.markdown(
+        "<p style='color:#888; font-size:0.7rem;'>Note: vulnerability threshold uses full‑year data, not the last 24 hours.</p>",
+        unsafe_allow_html=True
+    )
 
 st.sidebar.divider()
 months_present = [m for m in month_order if m in df['month_name'].unique()]
@@ -418,22 +424,22 @@ df_view, total_mw_saved = act_layer(df_view, reduction_rate_percent, apply_inter
 # ============================================================
 # EXTRACT CURVES (using the actual data for the filtered period)
 # ============================================================
-original_curve = df_view['simulated_demand_mw']
+simulated_curve = df_view['simulated_demand_mw']
 if apply_intervention_flag:
     optimized_curve = df_view['optimized_demand_mw']
     reduction_curve = df_view['grid_saver_reduction_mw']
 else:
-    optimized_curve = original_curve.copy()
+    optimized_curve = simulated_curve.copy()
     reduction_curve = np.zeros(len(df_view))
 
 # Peak values (observed data)
-peak_original = original_curve.max()
+peak_observed = simulated_curve.max()
 peak_optimized = optimized_curve.max()
-peak_reduction_mw = peak_original - peak_optimized
-peak_reduction_pct = (peak_reduction_mw / peak_original * 100) if peak_original > 0 else 0
+peak_reduction_mw = peak_observed - peak_optimized
+peak_reduction_pct = (peak_reduction_mw / peak_observed * 100) if peak_observed > 0 else 0
 
 # Peak time and index
-peak_idx = original_curve.idxmax()
+peak_idx = simulated_curve.idxmax()
 if peak_idx in df_view.index:
     peak_time = df_view.loc[peak_idx, DATETIME_COL]
 else:
@@ -697,7 +703,7 @@ st.markdown(f"""
 📌 <strong>Simulation Basis (Three‑Layer Baseline – Option A)</strong><br>
 • Theoretical baseline (explanation only): <strong>{THEORETICAL_BASELINE_MW:,} MW</strong><br>
 • Model operational max (95% of theoretical): <strong>{MODEL_PEAK_MW:,.0f} MW</strong><br>
-• Observed demand peak from data: <strong>{peak_original:,.0f} MW</strong><br>
+• Observed demand peak from data: <strong>{peak_observed:,.0f} MW</strong><br>
 • HVAC share: {HVAC_SHARE*100:.0f}% → HVAC load = {hvac_load_mw:,.0f} MW<br>
 • HVAC reduction applied: <strong>{reduction_rate_percent}%</strong><br>
 • System impact per event: <strong>{SYSTEM_REDUCTION_MW:.1f} MW</strong> ({SYSTEM_REDUCTION_MW/THEORETICAL_BASELINE_MW*100:.1f}% of theoretical grid)<br>
@@ -747,7 +753,7 @@ else:
 
 # Peak reduction cards (using observed data)
 col_p1, col_p2, col_p3, col_p4 = st.columns(4)
-col_p1.metric("Original Peak", f"{peak_original:,.0f} MW")
+col_p1.metric("Observed Peak", f"{peak_observed:,.0f} MW")
 col_p2.metric("After Grid Saver", f"{peak_optimized:,.0f} MW")
 col_p3.metric("Peak Reduction", f"{peak_reduction_pct:.2f}%")
 col_p4.metric("Peak Load Shed", f"{peak_reduction_mw:,.2f} MW")
@@ -777,12 +783,12 @@ fig = make_subplots(
     shared_xaxes=True
 )
 
-# BEFORE line (always visible)
+# BEFORE line (always visible) – label fixed
 fig.add_trace(go.Scatter(
     x=df_view[DATETIME_COL],
-    y=original_curve,
+    y=simulated_curve,
     mode='lines',
-    name='Original Demand',
+    name='Simulated Demand (Vulnerability-Scaled)',
     line=dict(color='#E74C3C', width=2),
 ), row=1, col=1)
 
@@ -809,9 +815,9 @@ fig.add_trace(go.Bar(
 if peak_idx in df_view.index:
     fig.add_trace(go.Scatter(
         x=[df_view.loc[peak_idx, DATETIME_COL]],
-        y=[peak_original],
+        y=[peak_observed],
         mode='markers',
-        name=f'Peak: {peak_original:,.0f} MW',
+        name=f'Peak: {peak_observed:,.0f} MW',
         marker=dict(color='#FFFFFF', size=8, symbol='star'),
     ), row=1, col=1)
 
@@ -831,7 +837,7 @@ st.plotly_chart(fig, width='stretch')
 st.markdown("""
 <div class='info-box'>
 📌 <strong>Chart Guide:</strong><br>
-• <span style='color:#E74C3C'>🔴 Red line:</span> Original demand (simulated from data)<br>
+• <span style='color:#E74C3C'>🔴 Red line:</span> Simulated demand (vulnerability‑scaled, 55–95% of theoretical baseline)<br>
 • <span style='color:#2ECC71'>🟢 Green dashed line:</span> Demand after Grid Saver intervention (ONLY shown when toggle is ON)<br>
 • <span style='color:#F39C12'>🟠 Orange bars:</span> Load reduction achieved during SPA-triggered hours (zero when toggle OFF)<br>
 • <span style='color:#FFFFFF'>⭐ White star:</span> Peak demand timestamp
@@ -843,7 +849,7 @@ st.markdown("""
 ⚠️ <strong>Thermal Rebound (Snapback) Effect:</strong><br>
 When HVAC systems are suppressed during an SPA event, they turn back on simultaneously afterward,
 creating a secondary demand spike. Grid Saver models this using:<br>
-• <strong>85% Compliance Rate</strong> — not all homes respond<br>
+• <strong>85% Compliance Rate</strong> — behavioral assumption from literature, not validated vs Pecan Street.<br>
 • <strong>60% Rebound Rate</strong> — 60% of shed load returns post-event<br>
 • <strong>Corrected rebound timing</strong> — rebound occurs in the hour following a reduction.
 </div>
@@ -863,7 +869,7 @@ with st.expander("📉 6-Hour Before vs After Analysis (around peak demand)"):
             x=window_df[DATETIME_COL],
             y=window_df['simulated_demand_mw'],
             mode='lines',
-            name='Original Demand',
+            name='Simulated Demand (Vulnerability-Scaled)',
             line=dict(color='#E74C3C', width=2)
         ))
         if apply_intervention_flag:
@@ -978,13 +984,13 @@ with col_c:
     <div style='background: #7B1A1A22; border: 1px solid #E74C3C; padding: 20px; border-radius: 10px; text-align: center; border-top: 4px solid #E74C3C;'>
         <h2 style='color: #E74C3C; font-size: 2rem; margin: 0;'>⚡</h2>
         <h3 style='color: #E74C3C; margin: 10px 0 5px 0;'>ACT</h3>
-        <p style='color: #888; font-size: 0.85rem;'>HVAC load coordination<br>85% compliance + 60% rebound<br>Pecan Street 868k records<br>SPA dual-confirmation</p>
+        <p style='color: #888; font-size: 0.85rem;'>HVAC load coordination<br>85% compliance (assumed) + 60% rebound<br>Pecan Street 868k records<br>SPA dual-confirmation</p>
     </div>
     """, unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
-# REPORTS SECTION
+# REPORTS SECTION (unchanged)
 # ============================================================
 with st.expander("📄 Reports and Insights (Download CSV)"):
     if live_mode:
@@ -1076,7 +1082,7 @@ st.markdown(f"""
         📡 Sense: Electricity Maps US-TEX-ERCO 2025 | 🧠 Predict: PJM XGBoost 91.3% Recall | ⚡ Act: Pecan Street 2018<br>
         🔒 SPA dual‑confirmation: Sense AND Predict must both trigger<br>
         📊 Three‑Layer Baseline: Theoretical {THEORETICAL_BASELINE_MW:,} MW (explanation) | 
-        Model max {MODEL_PEAK_MW:,.0f} MW (envelope) | Observed {peak_original:,.0f} MW (data truth)<br>
+        Model max {MODEL_PEAK_MW:,.0f} MW (envelope) | Observed {peak_observed:,.0f} MW (data truth)<br>
         ⏱️ Hourly resolution | Rebound: 60% snapback | Compliance: 85% assumed — not validated vs Pecan Street<br>
         📌 Notebook validated SPA events: {NOTEBOOK_SPA_EVENTS} per year → annual gross {ANNUAL_GROSS_MWH:,.0f} MWh, net {ANNUAL_NET_MWH:,.0f} MWh
     </p>
