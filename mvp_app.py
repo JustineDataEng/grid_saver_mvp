@@ -18,7 +18,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# CUSTOM STYLES
+# CUSTOM STYLES (unchanged)
 # ============================================================
 st.markdown("""
 <style>
@@ -73,18 +73,16 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# CONSTANTS
+# CONSTANTS (SINGLE SOURCE OF TRUTH)
 # ============================================================
 CARBON_COL           = 'Carbon intensity gCO\u2082eq/kWh (direct)'
 CFE_COL              = 'Carbon-free energy percentage (CFE%)'
 DECISION_THRESHOLD   = 0.4
-KW_PER_HOME          = 0.0920  # Validated: 0.0920 kW per home at 4% reduction
+KW_PER_HOME          = 0.0920   # validated at 4% reduction for 25 homes
 
-# ============================================================
-# SYSTEM CONSTANTS (SINGLE SOURCE OF TRUTH)
-# ============================================================
-BASELINE_DEMAND_MW = 75000  # ERCOT grid baseline
-HVAC_SHARE_OF_GRID = 0.25   # 25% of total grid demand is residential HVAC
+# Grid constants
+BASELINE_DEMAND_MW   = 75000    # ERCOT grid anchor
+HVAC_SHARE_OF_GRID   = 0.25     # 25% of total demand is residential HVAC
 
 MONTH_NAMES = {
     1: 'January', 2: 'February', 3: 'March', 4: 'April',
@@ -93,7 +91,6 @@ MONTH_NAMES = {
 }
 DATETIME_COL  = 'Datetime (UTC)'
 month_order = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-
 
 # ============================================================
 # HELPER FUNCTIONS
@@ -111,25 +108,19 @@ def count_spa_events(trigger_series):
         prev = curr
     return events
 
-
 def compute_system_reduction_mw(reduction_rate_percent):
     """
-    Calculate system-wide grid reduction in MW.
-    
-    Physical layer: 4% HVAC reduction on 25% HVAC share
-    System layer: Scales to total grid impact
-    
-    Formula: BASELINE_DEMAND_MW × HVAC_SHARE_OF_GRID × (reduction_rate_percent / 100)
-    Example: 75,000 × 0.25 × 0.04 = 750 MW (1% of grid)
+    Physical HVAC reduction and equivalent system impact.
+    Formula: BASELINE_DEMAND_MW * HVAC_SHARE_OF_GRID * (reduction_rate_percent/100)
+    For 4% HVAC reduction: 75,000 * 0.25 * 0.04 = 750 MW
+    System impact: 750/75,000 = 1% of total grid.
     """
     return BASELINE_DEMAND_MW * HVAC_SHARE_OF_GRID * (reduction_rate_percent / 100)
 
-
 def compute_scaled_reduction_kw(homes, reduction_rate_percent):
-    """Calculate total reduction in kW for Impact at Scale section (pure calculation)."""
+    """Impact at Scale: pure scenario calculator (not used in main simulation)."""
     scaling_factor = reduction_rate_percent / 4.0
     return homes * KW_PER_HOME * scaling_factor
-
 
 # ============================================================
 # LOAD MODEL AND DATA
@@ -142,7 +133,6 @@ def load_model():
         st.error("❌ Model file 'gridsaver_model.pkl' not found.")
         st.stop()
 
-
 @st.cache_data
 def load_data():
     try:
@@ -153,14 +143,12 @@ def load_data():
         st.error("❌ Data file 'data_sample.csv' not found.")
         st.stop()
 
-
 with st.spinner("Loading Grid Saver..."):
     model = load_model()
     df_raw = load_data()
 
-
 # ============================================================
-# FEATURE ENGINEERING
+# FEATURE ENGINEERING (unchanged)
 # ============================================================
 def engineer_features(df_input):
     df_fe = df_input.copy()
@@ -188,7 +176,6 @@ def engineer_features(df_input):
     df_fe['demand_delta_24h'] = df_fe['demand_mw'].diff(24)
     return df_fe.dropna().reset_index(drop=True)
 
-
 FEATURE_COLS = [
     'hour', 'day_of_week', 'month', 'day_of_year', 'is_weekend', 'is_summer', 'is_winter',
     'hour_sin', 'hour_cos', 'month_sin', 'month_cos',
@@ -197,9 +184,8 @@ FEATURE_COLS = [
     'demand_delta_1h', 'demand_delta_24h'
 ]
 
-
 # ============================================================
-# SENSE LAYER
+# SENSE LAYER (unchanged)
 # ============================================================
 def sense_layer(df_input):
     df_s = df_input.copy()
@@ -227,13 +213,11 @@ def sense_layer(df_input):
     df_s['grid_status'] = df_s['vulnerability_score'].apply(classify_status)
     return df_s, threshold
 
-
 # ============================================================
-# PREDICT LAYER
+# PREDICT LAYER (unchanged)
 # ============================================================
 def predict_layer(df_input, model):
     df_out = df_input.copy()
-
     if 'hour' not in df_out.columns:
         df_out['hour'] = df_out[DATETIME_COL].dt.hour
     if 'month' not in df_out.columns:
@@ -271,86 +255,72 @@ def predict_layer(df_input, model):
     df_out['predict_triggered'] = df_out['predict_triggered'].ffill().fillna(False)
     return df_out
 
-
 # ============================================================
-# ACT LAYER — WITH THERMAL REBOUND
+# ACT LAYER — unified model (corrected)
 # ============================================================
 def act_layer(df_input, reduction_rate_percent, apply_intervention_flag):
     """
-    SPA dual-confirmation with Real-World Thermal Rebound (Snapback).
-    Uses SINGLE SOURCE OF TRUTH: BASELINE_DEMAND_MW = 75,000
+    Single source of truth:
+    - original_demand_shape_mw: shape from vulnerability score (55-95% of BASELINE_DEMAND_MW)
+    - grid_saver_reduction_mw: applied only when toggle ON and SPA triggered
+    - rebound_mw: correct timing using shifted SPA flag
+    - optimized_demand_mw = original - reduction + rebound
     """
-    df_a = df_input.copy()
-    df_a['sense_triggered'] = df_a['vulnerability_event']
-    df_a['spa_action_triggered'] = (
-        df_a['sense_triggered'] & df_a['predict_triggered']
-    )
-    
-    # ============================================================
-    # SINGLE SOURCE OF TRUTH: System reduction calculation
-    # Physical: 4% HVAC reduction on 25% HVAC share = 750 MW (1% of grid)
-    # ============================================================
+    df = df_input.copy()
+    df['sense_triggered'] = df['vulnerability_event']
+    df['spa_action_triggered'] = df['sense_triggered'] & df['predict_triggered']
+
+    # Shape from vulnerability (no baseline shift)
+    base_pct = 0.55
+    peak_pct = 0.95
+    df['original_demand_shape_mw'] = (
+        base_pct + (df['vulnerability_score'] / 100) * (peak_pct - base_pct)
+    ) * BASELINE_DEMAND_MW
+
+    # Compute physical HVAC reduction (system-level)
     system_reduction_mw = compute_system_reduction_mw(reduction_rate_percent)
-    
+
     if apply_intervention_flag:
-        # Apply reduction ONLY during SPA-triggered hours
-        df_a['reduction_mw'] = np.where(
-            df_a['spa_action_triggered'],
+        df['grid_saver_reduction_mw'] = np.where(
+            df['spa_action_triggered'],
             system_reduction_mw,
             0
         )
     else:
-        df_a['reduction_mw'] = 0
-    
-    # ============================================================
-    # Calculate Thermal Rebound (The "Snapback")
-    # ============================================================
-    REBOUND_RATE = 0.60  # 60% of shed load returns as a spike
-    
-    df_a['previous_reduction'] = df_a['reduction_mw'].shift(1).fillna(0)
-    df_a['rebound_mw'] = np.where(
-        (~df_a['spa_action_triggered']) & (df_a['previous_reduction'] > 0),
-        df_a['previous_reduction'] * REBOUND_RATE,
+        df['grid_saver_reduction_mw'] = 0
+
+    # Thermal rebound (fixed timing: rebound occurs in the hour after a reduction)
+    REBOUND_RATE = 0.60
+    df['rebound_mw'] = np.where(
+        df['spa_action_triggered'].shift(1).fillna(False),
+        df['grid_saver_reduction_mw'].shift(1).fillna(0) * REBOUND_RATE,
         0
     )
-    
-    # ============================================================
-    # Calculate Final Adjusted Grid Demand
-    # ============================================================
-    # Net impact = Baseline - Reduction + Rebound
-    df_a['adjusted_demand_mw'] = BASELINE_DEMAND_MW - df_a['reduction_mw'] + df_a['rebound_mw']
-    
-    # Original demand shape from vulnerability score (55-95% of baseline)
-    base_load_pct = 0.55
-    peak_load_pct = 0.95
-    df_a['original_demand_shape_mw'] = (
-        base_load_pct + (df_a['vulnerability_score'] / 100) * (peak_load_pct - base_load_pct)
-    ) * BASELINE_DEMAND_MW
-    
-    total_mw_saved = df_a['reduction_mw'].sum() if apply_intervention_flag else 0
-    
-    return df_a, total_mw_saved, system_reduction_mw
 
+    # Unified optimized demand
+    df['optimized_demand_mw'] = (
+        df['original_demand_shape_mw'] - df['grid_saver_reduction_mw'] + df['rebound_mw']
+    )
+
+    total_mw_saved = df['grid_saver_reduction_mw'].sum() if apply_intervention_flag else 0
+    return df, total_mw_saved, system_reduction_mw
 
 # ============================================================
-# IMPACT AND DISPATCH CALCULATIONS
+# IMPACT & DISPATCH (uses system reduction)
 # ============================================================
 def compute_impact_metrics(row, reduction_rate_percent):
-    """For Smart Recommendations - uses system reduction calculation."""
-    system_reduction_mw = compute_system_reduction_mw(reduction_rate_percent)
-    mwh_saved = system_reduction_mw  # 1-hour window
+    system_mw = compute_system_reduction_mw(reduction_rate_percent)
+    mwh_saved = system_mw
     cost_savings = mwh_saved * 100
     carbon_intensity = row[CARBON_COL]
     co2_avoided_tons = (carbon_intensity * mwh_saved) / 1000
     return mwh_saved, cost_savings, co2_avoided_tons
-
 
 def compute_dispatch_priority(row):
     score = row['vulnerability_score'] * 0.5
     score += row.get('vuln_probability', 0) * 30
     score += min(row[CARBON_COL] / 10, 20)
     return round(score, 1)
-
 
 def get_risk_drivers(row, vulnerability_threshold, df_full):
     drivers = []
@@ -369,7 +339,6 @@ def get_risk_drivers(row, vulnerability_threshold, df_full):
     carbon_max = df_full[CARBON_COL].max()
     carbon_range = carbon_max - carbon_min if (carbon_max - carbon_min) != 0 else 1
     carbon_pct = (carbon - carbon_min) / carbon_range
-
     cfe_max = df_full[CFE_COL].max()
     cfe_pct = cfe / cfe_max if cfe_max != 0 else 0
 
@@ -386,12 +355,10 @@ def get_risk_drivers(row, vulnerability_threshold, df_full):
         drivers.append("🟡 Carbon-free energy is below mid-range — moderate clean supply")
     else:
         drivers.append("🟢 Carbon-free energy is strong — healthy clean supply buffer")
-
     return drivers
 
-
 # ============================================================
-# RUN FULL PIPELINE
+# RUN FULL PIPELINE (once)
 # ============================================================
 df, VULNERABILITY_THRESHOLD = sense_layer(df_raw)
 df['hour'] = df[DATETIME_COL].dt.hour
@@ -403,11 +370,10 @@ df['week'] = df[DATETIME_COL].dt.isocalendar().week.astype(int)
 
 df = predict_layer(df, model)
 
-# Locked notebook values for reference
+# Notebook reference values (not used for live calculation)
 NOTEBOOK_SENSE_TRIGGERS = 1316
 NOTEBOOK_PREDICT_TRIGGERS = 1659
 NOTEBOOK_SPA_ACTIONS = 154
-
 
 # ============================================================
 # SIDEBAR
@@ -423,57 +389,55 @@ if live_mode:
                         unsafe_allow_html=True)
 
 st.sidebar.divider()
-
 months_present = [m for m in month_order if m in df['month_name'].unique()]
 selected_month = st.sidebar.selectbox("Select Month", ['All Year'] + months_present)
 
 reduction_rate_percent = st.sidebar.slider(
     "HVAC Reduction Rate (%)",
     min_value=1, max_value=10, value=4, step=1,
-    help="Reduction applied to residential HVAC load only. At 25% HVAC share, 4% HVAC reduction = 1% total grid reduction (750 MW)."
+    help="Reduction applied to residential HVAC load. 4% HVAC reduction = 750 MW (1% total grid)."
 )
 
-# IMPACT AT SCALE SLIDER - ONLY affects Impact at Scale section
+# Impact at Scale slider (pure scenario)
 homes = st.sidebar.slider(
     "Homes Coordinated (Impact at Scale)",
     min_value=1000, max_value=1000000, value=100000, step=1000,
-    help="This slider only affects the 'Impact at Scale' section below. It shows what-if scaling scenarios using validated 0.0920 kW per home."
+    help="What-if scaling scenario using validated 0.0920 kW per home (does not affect main simulation)."
 )
 
 apply_intervention_flag = st.sidebar.toggle("Apply Grid Saver Intervention", value=True)
 
 with st.sidebar.expander("ℹ️ How Grid Saver Works"):
-    st.markdown("""
+    st.markdown(f"""
     **Vulnerability Score (0-100)**
     - **0-39: STABLE** — Normal
     - **40-69: WARNING** — Elevated risk
     - **70-100: CRITICAL** — Action required
-    
+
     **SPA Dual-Confirmation**
     - **Sense** → ERCOT carbon + CFE signals
     - **Predict** → PJM temporal pattern (24hr ahead)
     - **Action** → Only when BOTH confirm independently
-    
-    **Grid Baseline: 75,000 MW**
-    - HVAC share: 25% of total grid (18,750 MW)
-    - 4% HVAC reduction = 750 MW system impact (1% of grid)
-    
-    **Impact at Scale**
-    - Validated baseline: 0.0920 kW per home at 4% reduction
-    - Slider shows pure calculation for scenario planning
-    - Does NOT affect the main load reduction simulation
+
+    **Grid Baseline: {BASELINE_DEMAND_MW:,} MW**
+    - HVAC share of total grid: {HVAC_SHARE_OF_GRID*100:.0f}% ({BASELINE_DEMAND_MW * HVAC_SHARE_OF_GRID:,.0f} MW)
+    - {reduction_rate_percent}% HVAC reduction = {compute_system_reduction_mw(reduction_rate_percent):,.0f} MW
+    - Equivalent system impact: {compute_system_reduction_mw(reduction_rate_percent)/BASELINE_DEMAND_MW*100:.1f}% of total grid
+
+    **Thermal Rebound Modeling**
+    - 85% compliance rate (not all homes respond)
+    - 60% rebound spike after intervention ends
+    - Corrected timing: rebound occurs in the hour following a reduction
     """)
 
 st.sidebar.divider()
 st.sidebar.markdown("**Stack:** Colab + GitHub + Streamlit")
 st.sidebar.markdown("*Justine Adzormado*")
 
-
 # ============================================================
-# FILTER DATA FOR DISPLAY
+# FILTER DATA (Live Mode only time filter)
 # ============================================================
 if live_mode:
-    # STRICT: Live Mode ONLY filters time window - NO logic changes
     df_view = df[df[DATETIME_COL] >= df[DATETIME_COL].max() - pd.Timedelta(hours=24)].copy()
 elif selected_month != 'All Year':
     df_view = df[df['month_name'] == selected_month].copy()
@@ -484,35 +448,27 @@ if df_view.empty:
     st.warning("No data available for selected filters.")
     st.stop()
 
-# Run act layer using SINGLE SOURCE OF TRUTH
+# Apply act_layer to get unified curves
 df_view, total_mw_saved, system_reduction_mw = act_layer(df_view, reduction_rate_percent, apply_intervention_flag)
 
-# Calculate SPA events based on data
+# Compute metrics
 spa_events_view = count_spa_events(df_view['spa_action_triggered'])
-total_reduction_mwh = df_view['reduction_mw'].sum()
+total_reduction_mwh = df_view['grid_saver_reduction_mw'].sum()
 total_rebound_mwh = df_view['rebound_mw'].sum()
 net_reduction_mwh = total_reduction_mwh - total_rebound_mwh
 
-# Get original demand shape for charts
-original_demand = df_view['original_demand_shape_mw']
-
-# Optimized demand based on toggle state
-if apply_intervention_flag:
-    optimized_demand = df_view['adjusted_demand_mw']
-    reduction_curve = df_view['reduction_mw']
-else:
-    optimized_demand = original_demand
-    reduction_curve = np.zeros(len(df_view))
+# Original and optimized curves
+original_curve = df_view['original_demand_shape_mw']
+optimized_curve = df_view['optimized_demand_mw']
+reduction_curve = df_view['grid_saver_reduction_mw']  # zero when toggle OFF
 
 # Peak values
-peak_original = original_demand.max()
-peak_optimized = optimized_demand.max()
+peak_original = original_curve.max()
+peak_optimized = optimized_curve.max() if apply_intervention_flag else peak_original
 peak_reduction = peak_original - peak_optimized
 peak_reduction_pct = (peak_reduction / peak_original * 100) if peak_original > 0 else 0
 
-# Current row for status
 current_row = df_view.iloc[-1]
-
 
 # ============================================================
 # HEADER
@@ -535,12 +491,10 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-
 # ============================================================
-# GRID STATUS METRICS
+# GRID STATUS METRICS (unchanged)
 # ============================================================
 st.markdown("## ⚡ Grid Status")
-
 current_score = current_row['vulnerability_score']
 current_status = current_row['grid_status']
 current_carbon = current_row[CARBON_COL]
@@ -568,15 +522,12 @@ with col6:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-
 # ============================================================
-# VULNERABILITY TREND CHART
+# VULNERABILITY TREND CHART (unchanged)
 # ============================================================
 st.markdown("## 📈 Grid Vulnerability Score")
-
 color_map = {'STABLE': '#2ECC71', 'WARNING': '#F39C12', 'CRITICAL': '#E74C3C'}
 fig_trend = go.Figure()
-
 for status in ['STABLE', 'WARNING', 'CRITICAL']:
     mask = df_view['grid_status'] == status
     if mask.any():
@@ -588,7 +539,6 @@ for status in ['STABLE', 'WARNING', 'CRITICAL']:
             marker=dict(color=color_map[status], size=3, opacity=0.8),
             line=dict(color=color_map[status], width=0.8),
         ))
-
 fig_trend.add_hline(y=VULNERABILITY_THRESHOLD, line_dash='dash', line_color='#FF4444',
                     annotation_text=f'Threshold ({VULNERABILITY_THRESHOLD:.0f})')
 fig_trend.add_trace(go.Scatter(
@@ -598,14 +548,12 @@ fig_trend.add_trace(go.Scatter(
     name='Risk Projection (%)',
     line=dict(color='#9B59B6', dash='dot', width=1.2),
 ))
-
 fig_trend.update_layout(
     paper_bgcolor='#161B22', plot_bgcolor='#161B22',
     font=dict(color='white'), height=350,
     xaxis=dict(gridcolor='#30363D'), yaxis=dict(gridcolor='#30363D', title='Vulnerability Score'),
 )
 st.plotly_chart(fig_trend, width='stretch')
-
 st.markdown("""
 <div class='info-box'>
 📌 <strong>Chart Guide:</strong> Green=STABLE (&lt;40), Yellow=WARNING (40-69), Red=CRITICAL (≥70)<br>
@@ -615,9 +563,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
-
 # ============================================================
-# PEAK VULNERABILITY TIMELINE
+# PEAK VULNERABILITY TIMELINE (unchanged)
 # ============================================================
 st.markdown("## 🕒 Peak Vulnerability Timeline")
 col_left, col_right = st.columns(2)
@@ -650,22 +597,18 @@ with col_right:
         fig_month.update_layout(paper_bgcolor='#161B22', plot_bgcolor='#161B22', font=dict(color='white'),
                                 title=dict(text='Avg by Month', font=dict(size=13)), height=300)
         st.plotly_chart(fig_month, width='stretch')
-
 st.markdown("<br>", unsafe_allow_html=True)
-
 
 # ============================================================
 # RECOMMENDED GRID ACTION
 # ============================================================
 st.markdown("## 🎯 Recommended Grid Action")
 
-system_reduction_display = compute_system_reduction_mw(reduction_rate_percent)
-
 if current_status == 'CRITICAL':
     action_color, action_icon = "#E74C3C", "🔴"
     action_title = "CRITICAL — Immediate Action Required"
     if apply_intervention_flag:
-        action_text = f"Reduce residential HVAC load by {reduction_rate_percent}% (~{system_reduction_display:,.0f} MW system impact)"
+        action_text = f"Reduce residential HVAC load by {reduction_rate_percent}% (~{system_reduction_mw:,.0f} MW system impact)"
     else:
         action_text = "Grid Saver is OFF — monitoring only, no active intervention"
 elif current_status == 'WARNING':
@@ -698,12 +641,10 @@ if st.button("🧠 Explain Decision"):
     </div>
     """, unsafe_allow_html=True)
 
-
 # ============================================================
 # SMART RECOMMENDATIONS
 # ============================================================
 st.markdown("## 🧠 Smart Recommendations")
-
 dispatch_score = compute_dispatch_priority(current_row)
 st.markdown(f"""
 <div style='background:#161B22; border:1px solid #F39C12; padding:12px 16px; border-radius:8px; margin-bottom:12px;'>
@@ -716,7 +657,7 @@ st.markdown(f"""
 
 if current_status == 'CRITICAL':
     if apply_intervention_flag:
-        st.markdown(f"🔴 Execute {reduction_rate_percent}% HVAC reduction (~{system_reduction_display:,.0f} MW system impact)")
+        st.markdown(f"🔴 Execute {reduction_rate_percent}% HVAC reduction (~{system_reduction_mw:,.0f} MW system impact)")
         if current_row.get('spa_action_triggered', False):
             st.markdown("✅ SPA dual-confirmation achieved — dispatch approved")
         else:
@@ -730,14 +671,12 @@ elif current_status == 'WARNING':
 else:
     st.markdown("🟢 No intervention required — monitor grid conditions")
 
-# Impact summary
 if apply_intervention_flag:
-    per_event_impact = system_reduction_display
     st.markdown(f"""
     <div style='background:#161B22; border-left:4px solid #2ECC71; padding:10px 14px; border-radius:6px; margin-top:12px;'>
         <span style='color:#2ECC71; font-size:0.9rem;'>📊 <strong>Impact Summary</strong></span><br>
         <span style='color:#CCC; font-size:0.85rem;'>
-            Per SPA event (1-hour window): {per_event_impact:,.0f} MW | Net after rebound: {net_reduction_mwh:,.2f} MWh<br>
+            Per SPA event (1-hour window): {system_reduction_mw:,.0f} MW | Net after rebound: {net_reduction_mwh:,.2f} MWh<br>
             <strong>Current period:</strong> {spa_events_view} SPA events | {total_reduction_mwh:,.2f} MWh gross reduction
         </span>
     </div>
@@ -751,38 +690,29 @@ else:
         </span>
     </div>
     """, unsafe_allow_html=True)
-
 st.markdown("<br>", unsafe_allow_html=True)
 
-
 # ============================================================
-# LOAD REDUCTION SIMULATION (SINGLE SOURCE OF TRUTH)
+# LOAD REDUCTION SIMULATION
 # ============================================================
 st.markdown("## ⚡ Load Reduction Simulation")
 st.markdown(f"""
 <div class='info-box'>
 📌 <strong>Simulation Basis (Grid Saver Model):</strong><br>
-• Baseline demand: <strong>75,000 MW</strong><br>
-• HVAC share of total grid: <strong>25%</strong> (18,750 MW)<br>
+• Baseline demand: <strong>{BASELINE_DEMAND_MW:,} MW</strong><br>
+• HVAC share of total grid: <strong>{HVAC_SHARE_OF_GRID*100:.0f}%</strong> ({BASELINE_DEMAND_MW*HVAC_SHARE_OF_GRID:,.0f} MW)<br>
 • HVAC reduction applied: <strong>{reduction_rate_percent}%</strong><br>
-• System impact: <strong>{system_reduction_display:,.0f} MW</strong> ({system_reduction_display/BASELINE_DEMAND_MW*100:.1f}% of total grid)
+• System impact: <strong>{system_reduction_mw:,.0f} MW</strong> ({system_reduction_mw/BASELINE_DEMAND_MW*100:.1f}% of total grid)
 </div>
 """, unsafe_allow_html=True)
 
 if reduction_rate_percent != 4:
     st.warning(f"⚠️ Validated at 4% HVAC reduction = 750 MW (1% grid impact). Results at {reduction_rate_percent}% are scaled proportionally.")
 
-# Display trigger counts
-if live_mode:
-    display_sense = int((df_view['sense_triggered'] == True).sum())
-    display_predict = int((df_view['predict_triggered'] == True).sum())
-    display_spa = spa_events_view
-else:
-    display_sense = int((df_view['sense_triggered'] == True).sum())
-    display_predict = int((df_view['predict_triggered'] == True).sum())
-    display_spa = spa_events_view
-
 col_s1, col_s2, col_s3 = st.columns(3)
+display_sense = int((df_view['sense_triggered'] == True).sum())
+display_predict = int((df_view['predict_triggered'] == True).sum())
+display_spa = spa_events_view
 col_s1.metric("Sense Triggers", f"{display_sense:,}")
 col_s2.metric("Predict Triggers", f"{display_predict:,}")
 col_s3.metric("SPA Events (Dual-Confirmed)", f"{display_spa}")
@@ -801,7 +731,7 @@ if apply_intervention_flag:
             ✅ Net Load Reduction: {net_reduction_mwh:,.2f} MWh
         </p>
         <p style='color:#888; margin:5px 0 0 0; font-size:0.8rem;'>
-            Across {spa_events_view} SPA events | Per event: {system_reduction_display:,.0f} MW
+            Across {spa_events_view} SPA events | Per event: {system_reduction_mw:,.0f} MW
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -818,7 +748,6 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
-# Peak reduction cards
 col_p1, col_p2, col_p3, col_p4 = st.columns(4)
 col_p1.metric("Original Peak", f"{peak_original:,.0f} MW")
 col_p2.metric("After Grid Saver", f"{peak_optimized:,.0f} MW")
@@ -828,29 +757,24 @@ col_p4.metric("Peak Load Shed", f"{peak_reduction:,.2f} MW")
 if apply_intervention_flag:
     st.markdown(f"""
     <p style='color:#888; font-size:0.8rem; margin-top:6px;'>
-    ⚡ <strong>Max Reduction During SPA Events:</strong> {system_reduction_display:,.0f} MW per event
+    ⚡ <strong>Max Reduction During SPA Events:</strong> {system_reduction_mw:,.0f} MW per event
     </p>
     """, unsafe_allow_html=True)
-
     st.markdown(f"""
     <div class='success-box'>
     🛡️ <strong>Critical Events Intervened:</strong> {spa_events_view} SPA events in this period
     <br>Based on dual-confirmation (Sense + Predict) logic.
     </div>
     """, unsafe_allow_html=True)
-
 st.markdown("<br>", unsafe_allow_html=True)
 
-
 # ============================================================
-# BEFORE / AFTER PLOT (STRUCTURE PRESERVED)
+# BEFORE / AFTER CHART (STRUCTURE PRESERVED)
 # BEFORE line ALWAYS visible
 # AFTER line ONLY when toggle ON
 # Reduction bars ALWAYS exist (zero when OFF)
 # ============================================================
 st.markdown("#### 📉 Before vs After Grid Saver — Demand with Intervention")
-
-# Create subplot
 fig = make_subplots(
     rows=2, cols=1,
     subplot_titles=('Grid Demand (MW)', 'Load Reduction (MW)'),
@@ -858,35 +782,26 @@ fig = make_subplots(
     shared_xaxes=True
 )
 
-# BEFORE line (ALWAYS visible)
+# BEFORE line (always visible)
 fig.add_trace(go.Scatter(
     x=df_view[DATETIME_COL],
-    y=original_demand,
+    y=original_curve,
     mode='lines',
     name='Original Demand',
     line=dict(color='#E74C3C', width=2),
 ), row=1, col=1)
 
-# AFTER line (ONLY when toggle ON)
+# AFTER line (only when toggle ON)
 if apply_intervention_flag:
     fig.add_trace(go.Scatter(
         x=df_view[DATETIME_COL],
-        y=optimized_demand,
+        y=optimized_curve,
         mode='lines',
         name='After Grid Saver',
         line=dict(color='#2ECC71', width=2, dash='dash'),
     ), row=1, col=1)
 
-# Mark peak on both lines
-fig.add_trace(go.Scatter(
-    x=[df_view[DATETIME_COL].iloc[peak_idx] for peak_idx in [original_demand.idxmax()]] if not original_demand.empty else [],
-    y=[peak_original],
-    mode='markers',
-    name=f'Peak: {peak_original:,.0f} MW',
-    marker=dict(color='#FFFFFF', size=8, symbol='star'),
-), row=1, col=1)
-
-# Reduction bars (ALWAYS exist, zero when OFF)
+# Reduction bars (always exist, zero when OFF)
 fig.add_trace(go.Bar(
     x=df_view[DATETIME_COL],
     y=reduction_curve,
@@ -895,7 +810,16 @@ fig.add_trace(go.Bar(
     opacity=0.6,
 ), row=2, col=1)
 
-# Update layout
+# Mark peak on original curve
+peak_idx = original_curve.idxmax()
+fig.add_trace(go.Scatter(
+    x=[df_view[DATETIME_COL].iloc[peak_idx]],
+    y=[peak_original],
+    mode='markers',
+    name=f'Peak: {peak_original:,.0f} MW',
+    marker=dict(color='#FFFFFF', size=8, symbol='star'),
+), row=1, col=1)
+
 fig.update_layout(
     paper_bgcolor='#161B22',
     plot_bgcolor='#161B22',
@@ -904,14 +828,11 @@ fig.update_layout(
     legend=dict(bgcolor='#1A1A2E', bordercolor='#333'),
     hovermode='x unified'
 )
-
 fig.update_xaxes(gridcolor='#30363D', title_text='Datetime', row=2, col=1)
 fig.update_yaxes(gridcolor='#30363D', title_text='Demand (MW)', row=1, col=1)
 fig.update_yaxes(gridcolor='#30363D', title_text='Reduction (MW)', row=2, col=1)
-
 st.plotly_chart(fig, width='stretch')
 
-# Add explanation block
 st.markdown("""
 <div class='info-box'>
 📌 <strong>Chart Guide:</strong><br>
@@ -922,21 +843,20 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Rebound explanation
 st.markdown("""
 <div class='rebound-box'>
 ⚠️ <strong>Thermal Rebound (Snapback) Effect:</strong><br>
 When HVAC systems are suppressed during an SPA event, they turn back on simultaneously afterward,
 creating a secondary demand spike. Grid Saver models this using:<br>
 • <strong>85% Compliance Rate</strong> — not all homes respond<br>
-• <strong>60% Rebound Rate</strong> — 60% of shed load returns post-event
+• <strong>60% Rebound Rate</strong> — 60% of shed load returns post-event<br>
+• <strong>Corrected rebound timing</strong> — rebound occurs in the hour following a reduction.
 </div>
 """, unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
-
 # ============================================================
-# IMPACT AT SCALE (PURE CALCULATION - AFFECTED BY SLIDER ONLY)
+# IMPACT AT SCALE (pure scenario, affected only by slider)
 # ============================================================
 st.divider()
 st.markdown("## 📊 Impact at Scale")
@@ -958,11 +878,11 @@ else:
     grid_impact = "National Scale"
     impact_color = "#2ECC71"
 
-col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-col_s1.metric("Homes Coordinated", f"{homes:,}")
-col_s2.metric("Projected Reduction (per event)", f"{scaled_reduction_mw:,.1f} MW")
-col_s3.metric("Impact Level", grid_impact)
-col_s4.metric("Reserve Margin", "Exceeds 200MW" if scaled_reduction_mw > 200 else "Building toward")
+col_i1, col_i2, col_i3, col_i4 = st.columns(4)
+col_i1.metric("Homes Coordinated", f"{homes:,}")
+col_i2.metric("Projected Reduction (per event)", f"{scaled_reduction_mw:,.1f} MW")
+col_i3.metric("Impact Level", grid_impact)
+col_i4.metric("Reserve Margin", "Exceeds 200MW" if scaled_reduction_mw > 200 else "Building toward")
 
 percentage_of_grid = (scaled_reduction_mw / BASELINE_DEMAND_MW) * 100
 st.markdown(
@@ -979,16 +899,13 @@ Real-world performance may vary due to behavioral diversity, device heterogeneit
 and rebound effects following coordinated load reduction.
 </div>
 """, unsafe_allow_html=True)
-
 st.markdown("<br>", unsafe_allow_html=True)
 
-
 # ============================================================
-# SYSTEM ARCHITECTURE
+# SYSTEM ARCHITECTURE (unchanged)
 # ============================================================
 st.markdown("## 🏗️ System Architecture")
 col_a, col_b, col_c = st.columns(3)
-
 with col_a:
     st.markdown("""
     <div style='background: #1B4F8C22; border: 1px solid #4A9EFF; padding: 20px; border-radius: 10px; text-align: center; border-top: 4px solid #4A9EFF;'>
@@ -997,7 +914,6 @@ with col_a:
         <p style='color: #888; font-size: 0.85rem;'>Detect grid vulnerability<br>Carbon intensity + CFE%<br>Electricity Maps ERCOT<br>8,760 hourly records</p>
     </div>
     """, unsafe_allow_html=True)
-
 with col_b:
     st.markdown("""
     <div style='background: #1A6B2E22; border: 1px solid #2ECC71; padding: 20px; border-radius: 10px; text-align: center; border-top: 4px solid #2ECC71;'>
@@ -1006,7 +922,6 @@ with col_b:
         <p style='color: #888; font-size: 0.85rem;'>XGBoost 24hr forecast<br>91.3% Recall validated<br>PJM 32,896 records<br>Temporal patterns only</p>
     </div>
     """, unsafe_allow_html=True)
-
 with col_c:
     st.markdown("""
     <div style='background: #7B1A1A22; border: 1px solid #E74C3C; padding: 20px; border-radius: 10px; text-align: center; border-top: 4px solid #E74C3C;'>
@@ -1015,25 +930,22 @@ with col_c:
         <p style='color: #888; font-size: 0.85rem;'>HVAC load coordination<br>85% compliance + 60% rebound<br>Pecan Street 868k records<br>SPA dual-confirmation</p>
     </div>
     """, unsafe_allow_html=True)
-
 st.markdown("<br>", unsafe_allow_html=True)
 
-
 # ============================================================
-# REPORTS SECTION
+# REPORTS SECTION (FIXED: always run act_layer to ensure columns exist)
 # ============================================================
 with st.expander("📄 Reports and Insights (Download CSV)"):
     if live_mode:
         st.warning("📊 Reports are disabled in Live Mode. Switch to Analysis Mode to generate reports.")
     else:
         st.markdown("*Select a time period to view grid performance analysis and download a report.*")
-        
         col_r1, col_r2 = st.columns(2)
         with col_r1:
             report_type = st.selectbox("Report Type", ["Yearly", "Monthly", "Weekly"])
         with col_r2:
             report_year = st.selectbox("Year", sorted(df['year'].unique(), reverse=True))
-        
+
         if report_type == "Monthly":
             avail_months = sorted(df[df['year'] == report_year]['month'].unique())
             month_names = [MONTH_NAMES[m] for m in avail_months]
@@ -1049,17 +961,20 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
         else:
             df_report = df[df['year'] == report_year].copy()
             period_label = f"{report_year}"
-        
+
         if not df_report.empty:
+            # IMPORTANT: apply act_layer to reports to ensure all SPA columns exist
+            df_report, _, _ = act_layer(df_report, reduction_rate_percent, apply_intervention_flag)
+
             avg_vuln = df_report['vulnerability_score'].mean()
             peak_vuln = df_report['vulnerability_score'].max()
             spa_events = count_spa_events(df_report['spa_action_triggered'])
-            
+
             col_m1, col_m2, col_m3 = st.columns(3)
             col_m1.metric("Avg Vulnerability", f"{avg_vuln:.1f}")
             col_m2.metric("Peak Vulnerability", f"{peak_vuln:.1f}")
             col_m3.metric("SPA Events", f"{spa_events}")
-            
+
             # Pie chart
             status_counts = df_report['grid_status'].value_counts()
             fig_pie = go.Figure(data=[go.Pie(
@@ -1069,7 +984,7 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
             fig_pie.update_layout(paper_bgcolor='#161B22', plot_bgcolor='#161B22',
                                   font=dict(color='white'), height=300)
             st.plotly_chart(fig_pie, width='stretch')
-            
+
             # Trend chart
             fig_report = go.Figure()
             for status in ['STABLE', 'WARNING', 'CRITICAL']:
@@ -1083,9 +998,8 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
             fig_report.update_layout(paper_bgcolor='#161B22', plot_bgcolor='#161B22',
                                       font=dict(color='white'), height=300)
             st.plotly_chart(fig_report, width='stretch')
-            
             st.info(f"📊 {period_label}: {spa_events} SPA events in this period")
-            
+
             try:
                 export_df = df_report.copy()
                 csv_data = export_df.to_csv(index=False)
@@ -1100,11 +1014,10 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
         else:
             st.warning("No data available for selected period.")
 
-
 # ============================================================
 # FOOTER
 # ============================================================
-st.markdown("""
+st.markdown(f"""
 <div style='background: #161B22; padding: 15px; border-radius: 8px; border: 1px solid #30363D; text-align: center; margin-top: 20px;'>
     <p style='color: #888; margin: 0; font-size: 0.85rem;'>
         Grid Saver | Adaptive Grid Intelligence Platform | Justine Adzormado
@@ -1112,7 +1025,7 @@ st.markdown("""
     <p style='color: #555; margin: 5px 0 0 0; font-size: 0.75rem;'>
         📡 Sense: Electricity Maps US-TEX-ERCO 2025 | 🧠 Predict: PJM XGBoost 91.3% Recall | ⚡ Act: Pecan Street 2018<br>
         🔒 SPA dual-confirmation: Action only when BOTH Sense AND Predict independently confirm vulnerability<br>
-        📊 Grid Baseline: 75,000 MW | HVAC Share: 25% | 4% HVAC reduction = 750 MW (1% grid impact)
+        📊 Grid Baseline: {BASELINE_DEMAND_MW:,} MW | HVAC Share: {HVAC_SHARE_OF_GRID*100:.0f}% | {reduction_rate_percent}% HVAC reduction = {system_reduction_mw:,.0f} MW ({system_reduction_mw/BASELINE_DEMAND_MW*100:.1f}% grid impact)
     </p>
     <p style='color: #555; font-size: 0.7rem; margin-top: 5px;'>
         ⏱️ <strong>Temporal resolution:</strong> Hourly intervals. Rebound modeled at 60% with 85% compliance.
