@@ -463,7 +463,7 @@ current_row = df_view.iloc[-1]
 # HEADER
 # ============================================================
 mode_label = "🔴 LIVE MODE (Last 24h)" if live_mode else "📊 ANALYSIS MODE (Full Year)"
-mode_color = "#E74C3C" if live_mode else "#E74C3C"
+mode_color = "#E74C3C" if live_mode else "#2ECC71"
 
 st.markdown(f"""
 <div style='background: linear-gradient(135deg, #1B4F8C, #0D1117); padding: 30px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #30363D;'>
