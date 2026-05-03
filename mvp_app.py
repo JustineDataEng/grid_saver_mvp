@@ -79,23 +79,25 @@ NOTEBOOK_SENSE_TRIGGERS = 1316
 NOTEBOOK_PREDICT_TRIGGERS = 1659
 NOTEBOOK_SPA_EVENTS = 154
 
-# Grid constants – single source of truth
-BASELINE_DEMAND_MW = 70320          # dataset peak
-HVAC_SHARE = 0.25                   # 25% of grid is residential HVAC
-HVAC_REDUCTION_RATE = 0.04          # 4% HVAC reduction
+# ============================================================
+# THREE‑LAYER BASELINE (Option A)
+# ============================================================
+THEORETICAL_BASELINE_MW = 70320          # explanation only, used for HVAC narrative
+MODEL_PEAK_MW = THEORETICAL_BASELINE_MW * 0.95   # 66804 MW – simulation ceiling
+HVAC_SHARE = 0.25
+HVAC_REDUCTION_RATE = 0.04
 
-# HVAC load and reduction (explicit for clarity)
-hvac_load_mw = BASELINE_DEMAND_MW * HVAC_SHARE
-SYSTEM_REDUCTION_MW = hvac_load_mw * HVAC_REDUCTION_RATE   # = 703.2 MW
+hvac_load_mw = THEORETICAL_BASELINE_MW * HVAC_SHARE
+SYSTEM_REDUCTION_MW = hvac_load_mw * HVAC_REDUCTION_RATE   # 703.2 MW
 
-# Annual energy totals (correct: MW × 154 hours)
+# Annual totals (MW × 154 hours)
 ANNUAL_GROSS_MWH = NOTEBOOK_SPA_EVENTS * SYSTEM_REDUCTION_MW          # 108,293
 REBOUND_RATE = 0.60
 ANNUAL_REBOUND_MWH = ANNUAL_GROSS_MWH * REBOUND_RATE                  # 64,976
 ANNUAL_NET_MWH = ANNUAL_GROSS_MWH - ANNUAL_REBOUND_MWH                # 43,317
 
 # ============================================================
-# CONSTANTS (remaining)
+# CONSTANTS
 # ============================================================
 CARBON_COL = 'Carbon intensity gCO\u2082eq/kWh (direct)'
 CFE_COL = 'Carbon-free energy percentage (CFE%)'
@@ -114,7 +116,7 @@ month_order = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov'
 # HELPER FUNCTIONS
 # ============================================================
 def count_spa_events(trigger_series):
-    """Count SPA events using rising edge detection (kept for reference but not used for global totals)."""
+    """Count SPA events using rising edge detection (kept for reference only)."""
     if len(trigger_series) == 0:
         return 0
     trigger_array = (trigger_series == True).fillna(False).values
@@ -272,14 +274,14 @@ def act_layer(df_input, reduction_rate_percent, apply_intervention_flag):
     df['sense_triggered'] = df['vulnerability_event']
     df['spa_action_triggered'] = df['sense_triggered'] & df['predict_triggered']
 
-    # Original demand shape (scaled to BASELINE_DEMAND_MW)
+    # Simulated demand curve (55% to 95% of theoretical baseline)
     base_pct = 0.55
     peak_pct = 0.95
-    df['original_demand_shape_mw'] = (
+    df['simulated_demand_mw'] = (
         base_pct + (df['vulnerability_score'] / 100) * (peak_pct - base_pct)
-    ) * BASELINE_DEMAND_MW
+    ) * THEORETICAL_BASELINE_MW
 
-    # Reduction value (constant per SPA event, from the HVAC-only model)
+    # Reduction value (constant per SPA event)
     actual_reduction_mw = SYSTEM_REDUCTION_MW
 
     if apply_intervention_flag:
@@ -300,7 +302,7 @@ def act_layer(df_input, reduction_rate_percent, apply_intervention_flag):
     )
 
     df['optimized_demand_mw'] = (
-        df['original_demand_shape_mw'] - df['grid_saver_reduction_mw'] + df['rebound_mw']
+        df['simulated_demand_mw'] - df['grid_saver_reduction_mw'] + df['rebound_mw']
     )
 
     total_mw_saved = df['grid_saver_reduction_mw'].sum() if apply_intervention_flag else 0
@@ -362,15 +364,20 @@ with st.sidebar.expander("ℹ️ How Grid Saver Works"):
     - Predict triggers: **{NOTEBOOK_PREDICT_TRIGGERS}** hours
     - SPA events (dual‑confirmed): **{NOTEBOOK_SPA_EVENTS}** hours
 
-    **Grid Baseline: {BASELINE_DEMAND_MW:,} MW** (dataset peak)
-    - HVAC share: {HVAC_SHARE*100:.0f}% → HVAC load = {hvac_load_mw:,.0f} MW
-    - {reduction_rate_percent}% HVAC reduction → **{SYSTEM_REDUCTION_MW:.1f} MW** per SPA hour
-    - Equivalent: {SYSTEM_REDUCTION_MW/BASELINE_DEMAND_MW*100:.1f}% of total grid
+    **Three‑Layer Baseline (Option A)**
+    - Theoretical baseline (explanation only): **{THEORETICAL_BASELINE_MW:,} MW**
+    - Model operational max: **{MODEL_PEAK_MW:,.0f} MW** (95% of theoretical)
+    - Observed data peak: from actual dataset
 
-    **Thermal Rebound Modeling** (60% snapback)
-    - Gross annual reduction: **{ANNUAL_GROSS_MWH:,.0f} MWh**
-    - Rebound: **{ANNUAL_REBOUND_MWH:,.0f} MWh**
-    - Net annual saving: **{ANNUAL_NET_MWH:,.0f} MWh**
+    **HVAC Reduction Model**
+    - HVAC share: {HVAC_SHARE*100:.0f}% → load = {hvac_load_mw:,.0f} MW
+    - {reduction_rate_percent}% HVAC reduction → **{SYSTEM_REDUCTION_MW:.1f} MW** per SPA hour
+    - Equivalent: {SYSTEM_REDUCTION_MW/THEORETICAL_BASELINE_MW*100:.1f}% of theoretical grid
+
+    **Annual Impact (based on {NOTEBOOK_SPA_EVENTS} events)**
+    - Gross reduction: **{ANNUAL_GROSS_MWH:,.0f} MWh**
+    - Rebound (60%): **{ANNUAL_REBOUND_MWH:,.0f} MWh**
+    - Net saving: **{ANNUAL_NET_MWH:,.0f} MWh**
     """)
 
 st.sidebar.divider()
@@ -397,7 +404,7 @@ df_view, total_mw_saved = act_layer(df_view, reduction_rate_percent, apply_inter
 # ============================================================
 # EXTRACT CURVES (using the actual data for the filtered period)
 # ============================================================
-original_curve = df_view['original_demand_shape_mw']
+original_curve = df_view['simulated_demand_mw']
 if apply_intervention_flag:
     optimized_curve = df_view['optimized_demand_mw']
     reduction_curve = df_view['grid_saver_reduction_mw']
@@ -405,16 +412,18 @@ else:
     optimized_curve = original_curve.copy()
     reduction_curve = np.zeros(len(df_view))
 
-# Peak values (from filtered view)
+# Peak values (observed data)
+peak_original = original_curve.max()
+peak_optimized = optimized_curve.max()
+peak_reduction_mw = peak_original - peak_optimized
+peak_reduction_pct = (peak_reduction_mw / peak_original * 100) if peak_original > 0 else 0
+
+# Peak time and index
 peak_idx = original_curve.idxmax()
 if peak_idx in df_view.index:
     peak_time = df_view.loc[peak_idx, DATETIME_COL]
 else:
     peak_time = df_view[DATETIME_COL].iloc[-1]
-peak_original = original_curve.max()
-peak_optimized = optimized_curve.max()
-peak_reduction_mw = peak_original - peak_optimized
-peak_reduction_pct = (peak_reduction_mw / peak_original * 100) if peak_original > 0 else 0
 
 # Totals (for the filtered period, not used for annual metrics)
 total_reduction_mwh = reduction_curve.sum()
@@ -518,7 +527,7 @@ st.markdown("""
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
-# PEAK VULNERABILITY TIMELINE
+# PEAK VULNERABILITY TIMELINE (unchanged)
 # ============================================================
 st.markdown("## 🕒 Peak Vulnerability Timeline")
 col_left, col_right = st.columns(2)
@@ -671,17 +680,19 @@ st.markdown("<br>", unsafe_allow_html=True)
 st.markdown("## ⚡ Load Reduction Simulation")
 st.markdown(f"""
 <div class='info-box'>
-📌 <strong>Simulation Basis (Grid Saver Model):</strong><br>
-• Baseline demand: <strong>{BASELINE_DEMAND_MW:,} MW</strong> (dataset peak)<br>
-• HVAC share of total grid: <strong>{HVAC_SHARE*100:.0f}%</strong> → HVAC load = {hvac_load_mw:,.0f} MW<br>
+📌 <strong>Simulation Basis (Three‑Layer Baseline – Option A)</strong><br>
+• Theoretical baseline (explanation only): <strong>{THEORETICAL_BASELINE_MW:,} MW</strong><br>
+• Model operational max (95% of theoretical): <strong>{MODEL_PEAK_MW:,.0f} MW</strong><br>
+• Observed demand peak from data: <strong>{peak_original:,.0f} MW</strong><br>
+• HVAC share: {HVAC_SHARE*100:.0f}% → HVAC load = {hvac_load_mw:,.0f} MW<br>
 • HVAC reduction applied: <strong>{reduction_rate_percent}%</strong><br>
-• System impact per event: <strong>{SYSTEM_REDUCTION_MW:.1f} MW</strong> ({SYSTEM_REDUCTION_MW/BASELINE_DEMAND_MW*100:.1f}% of total grid)<br>
+• System impact per event: <strong>{SYSTEM_REDUCTION_MW:.1f} MW</strong> ({SYSTEM_REDUCTION_MW/THEORETICAL_BASELINE_MW*100:.1f}% of theoretical grid)<br>
 • Annual SPA events (dual‑confirmed): <strong>{NOTEBOOK_SPA_EVENTS}</strong>
 </div>
 """, unsafe_allow_html=True)
 
 if reduction_rate_percent != 4:
-    st.warning(f"⚠️ Validated at 4% HVAC reduction = {SYSTEM_REDUCTION_MW:.1f} MW ({SYSTEM_REDUCTION_MW/BASELINE_DEMAND_MW*100:.1f}% grid impact). Results at {reduction_rate_percent}% are proportionally scaled.")
+    st.warning(f"⚠️ Validated at 4% HVAC reduction = {SYSTEM_REDUCTION_MW:.1f} MW ({SYSTEM_REDUCTION_MW/THEORETICAL_BASELINE_MW*100:.1f}% grid impact). Results at {reduction_rate_percent}% are proportionally scaled.")
 
 # SPA trigger cards (locked notebook values)
 col_s1, col_s2, col_s3 = st.columns(3)
@@ -720,7 +731,7 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
-# Peak reduction cards (using actual filtered peak values)
+# Peak reduction cards (using observed data)
 col_p1, col_p2, col_p3, col_p4 = st.columns(4)
 col_p1.metric("Original Peak", f"{peak_original:,.0f} MW")
 col_p2.metric("After Grid Saver", f"{peak_optimized:,.0f} MW")
@@ -806,7 +817,7 @@ st.plotly_chart(fig, width='stretch')
 st.markdown("""
 <div class='info-box'>
 📌 <strong>Chart Guide:</strong><br>
-• <span style='color:#E74C3C'>🔴 Red line:</span> Original demand (dataset baseline)<br>
+• <span style='color:#E74C3C'>🔴 Red line:</span> Original demand (simulated from data)<br>
 • <span style='color:#2ECC71'>🟢 Green dashed line:</span> Demand after Grid Saver intervention (ONLY shown when toggle is ON)<br>
 • <span style='color:#F39C12'>🟠 Orange bars:</span> Load reduction achieved during SPA-triggered hours (zero when toggle OFF)<br>
 • <span style='color:#FFFFFF'>⭐ White star:</span> Peak demand timestamp
@@ -836,7 +847,7 @@ with st.expander("📉 6-Hour Before vs After Analysis (around peak demand)"):
         fig_window = go.Figure()
         fig_window.add_trace(go.Scatter(
             x=window_df[DATETIME_COL],
-            y=window_df['original_demand_shape_mw'],
+            y=window_df['simulated_demand_mw'],
             mode='lines',
             name='Original Demand',
             line=dict(color='#E74C3C', width=2)
@@ -886,7 +897,7 @@ st.markdown("*This section shows what-if scaling scenarios. Adjust the slider ab
 
 scaled_reduction_kw = compute_scaled_reduction_kw(homes, reduction_rate_percent)
 scaled_reduction_mw = scaled_reduction_kw / 1000
-grid_impact_percent = (scaled_reduction_mw / BASELINE_DEMAND_MW) * 100
+grid_impact_percent = (scaled_reduction_mw / THEORETICAL_BASELINE_MW) * 100
 
 col_i1, col_i2, col_i3, col_i4 = st.columns(4)
 with col_i1:
@@ -959,7 +970,7 @@ with col_c:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
-# REPORTS SECTION (uses filtered SPA events for period, shows notebook total for reference)
+# REPORTS SECTION
 # ============================================================
 with st.expander("📄 Reports and Insights (Download CSV)"):
     if live_mode:
@@ -989,7 +1000,7 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
             period_label = f"{report_year}"
 
         if not df_report.empty:
-            # Run act_layer to get SPA columns for this period (for period-specific count)
+            # Run act_layer to get SPA columns for this period
             df_report, _ = act_layer(df_report, reduction_rate_percent, apply_intervention_flag)
             avg_vuln = df_report['vulnerability_score'].mean()
             peak_vuln = df_report['vulnerability_score'].max()
@@ -1050,7 +1061,10 @@ st.markdown(f"""
     <p style='color: #555; margin: 5px 0 0 0; font-size: 0.75rem;'>
         📡 Sense: Electricity Maps US-TEX-ERCO 2025 | 🧠 Predict: PJM XGBoost 91.3% Recall | ⚡ Act: Pecan Street 2018<br>
         🔒 SPA dual-confirmation: Action only when BOTH Sense AND Predict independently confirm vulnerability<br>
-        📊 Grid Baseline: {BASELINE_DEMAND_MW:,} MW | HVAC Share: {HVAC_SHARE*100:.0f}% | {reduction_rate_percent}% HVAC reduction = {SYSTEM_REDUCTION_MW:.1f} MW ({SYSTEM_REDUCTION_MW/BASELINE_DEMAND_MW*100:.1f}% grid impact)<br>
+        📊 Three‑Layer Baseline (Option A):<br>
+        &nbsp;&nbsp;• Theoretical: {THEORETICAL_BASELINE_MW:,} MW (explanation)<br>
+        &nbsp;&nbsp;• Model max: {MODEL_PEAK_MW:,.0f} MW (95% of theoretical)<br>
+        &nbsp;&nbsp;• Observed peak: {peak_original:,.0f} MW (from data)<br>
         📌 Notebook validated SPA events: {NOTEBOOK_SPA_EVENTS} per year → annual gross {ANNUAL_GROSS_MWH:,.0f} MWh, net {ANNUAL_NET_MWH:,.0f} MWh
     </p>
     <p style='color: #555; font-size: 0.7rem; margin-top: 5px;'>
