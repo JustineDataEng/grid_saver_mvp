@@ -311,15 +311,18 @@ df['week'] = df[DATETIME_COL].dt.isocalendar().week.astype(int)
 
 df = predict_layer(df, model)
 
+# ------------------------------------------------------------------
+# Create SPA columns for the full dataset (needed for locked counts)
+# ------------------------------------------------------------------
+df['sense_triggered'] = df['vulnerability_event']
+df['spa_action_triggered'] = df['sense_triggered'] & df['predict_triggered']
+
 # ============================================================
 # SPA LOCKED VARIABLES (compute once, use everywhere)
 # ============================================================
 SPA_SENSE_COUNT = int(df['sense_triggered'].sum())
 SPA_PREDICT_COUNT = int(df['predict_triggered'].sum())
-SPA_EVENTS = count_spa_events(df['spa_action_triggered'])   # 154
-
-# Verify against notebook truth (uncomment for debugging)
-# st.write(f"SPA sense: {SPA_SENSE_COUNT}, predict: {SPA_PREDICT_COUNT}, events: {SPA_EVENTS}")
+SPA_EVENTS = count_spa_events(df['spa_action_triggered'])   # should be 154
 
 # ============================================================
 # SIDEBAR
@@ -981,9 +984,7 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
 
             avg_vuln = df_report['vulnerability_score'].mean()
             peak_vuln = df_report['vulnerability_score'].max()
-            # Use locked SPA events (whole year) for consistency, as the report period may have fewer.
-            # However, to avoid confusion, we show the filtered period's SPA events if needed.
-            # Here we use the filtered period's actual events, but you may replace with SPA_EVENTS if desired.
+            # Use filtered period's SPA events for transparency
             spa_events_report = count_spa_events(df_report['spa_action_triggered'])
 
             col_m1, col_m2, col_m3 = st.columns(3)
