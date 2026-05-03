@@ -800,37 +800,38 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
-# Peak reduction – horizontal text boxes for Observed Peak and After Grid Saver
-col_peak1, col_peak2 = st.columns(2)
+# Peak reduction – small text boxes (aligned with Impact at Scale style)
+col_peak1, col_peak2, col_peak3, col_peak4 = st.columns(4)
+
 with col_peak1:
     st.markdown(f"""
-    <div class='text-box-horizontal'>
-        <p style='color:#888; margin:0; font-size:1.2rem;'>Observed Peak</p>
-        <h3 style='color:#E74C3C; margin:0;'>{peak_observed:,.0f} MW</h2>
-    </div>
-    """, unsafe_allow_html=True)
-with col_peak2:
-    st.markdown(f"""
-    <div class='text-box-horizontal'>
-        <p style='color:#888; margin:0; font-size:1.2rem;'>After Grid Saver</p>
-        <h3 style='color:#2ECC71; margin:0;'>{peak_optimized:,.0f} MW</h2>
+    <div class='metric-card'>
+        <p style='color:#888; margin:0; font-size:0.75rem;'>Observed Peak</p>
+        <h3 style='color:#E74C3C; margin:0; font-size:1.1rem;'>{peak_observed:,.0f} MW</h3>
     </div>
     """, unsafe_allow_html=True)
 
-# Keep reduction percentage and load shed as metric cards (optional, you can keep them)
-col_p3, col_p4 = st.columns(2)
-with col_p3:
+with col_peak2:
     st.markdown(f"""
     <div class='metric-card'>
-        <h3 style='color:#4A9EFF; font-size:1.2rem; margin:0;'>{peak_reduction_pct:.2f}%</h2>
-        <p style='color:#888; margin:0;'>Peak Reduction</p>
+        <p style='color:#888; margin:0; font-size:0.75rem;'>After Grid Saver</p>
+        <h3 style='color:#2ECC71; margin:0; font-size:1.1rem;'>{peak_optimized:,.0f} MW</h3>
     </div>
     """, unsafe_allow_html=True)
-with col_p4:
+
+with col_peak3:
     st.markdown(f"""
     <div class='metric-card'>
-        <h3 style='color:#F39C12; font-size:1.2rem; margin:0;'>{peak_reduction_mw:,.2f} MW</h2>
-        <p style='color:#888; margin:0;'>Peak Load Shed</p>
+        <p style='color:#888; margin:0; font-size:0.75rem;'>Peak Reduction</p>
+        <h3 style='color:#4A9EFF; margin:0; font-size:1.1rem;'>{peak_reduction_pct:.2f}%</h3>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col_peak4:
+    st.markdown(f"""
+    <div class='metric-card'>
+        <p style='color:#888; margin:0; font-size:0.75rem;'>Peak Load Shed</p>
+        <h3 style='color:#F39C12; margin:0; font-size:1.1rem;'>{peak_reduction_mw:,.2f} MW</h3>
     </div>
     """, unsafe_allow_html=True)
 
