@@ -74,16 +74,21 @@ st.markdown("""
 
 # ============================================================
 # LOCKED NOTEBOOK TRUTH (NEVER RECOMPUTE)
+# Annual totals are immutable. SPA=154, Gross=108,293 MWh, Net=43,317 MWh.
 # ============================================================
 NOTEBOOK_SENSE_TRIGGERS = 1316
 NOTEBOOK_PREDICT_TRIGGERS = 1659
 NOTEBOOK_SPA_EVENTS = 154
 
 # ============================================================
-# THREE‑LAYER BASELINE (Option A)
+# THREE-LAYER BASELINE (Option A)
+# Layer 1 — THEORETICAL: explanation + HVAC decomposition only. Never plotted.
+# Layer 2 — MODEL PEAK:  simulation envelope ceiling. Documented, not enforced.
+# Layer 3 — OBSERVED:    runtime max from data. Never overridden.
 # ============================================================
 THEORETICAL_BASELINE_MW = 70320          # explanation only, used for HVAC narrative
-MODEL_PEAK_MW = THEORETICAL_BASELINE_MW * 0.95   # 66804 MW – simulation ceiling
+MODEL_PEAK_MW = THEORETICAL_BASELINE_MW * 0.95   # 66,804 MW — reference only, not enforced
+
 HVAC_SHARE = 0.25
 HVAC_REDUCTION_RATE = 0.04
 
@@ -196,7 +201,8 @@ FEATURE_COLS = [
 ]
 
 # ============================================================
-# SENSE LAYER
+# SENSE LAYER — detects grid stress from carbon + CFE signals.
+# Outputs: vulnerability_score (0-100), grid_status, vulnerability_event.
 # ============================================================
 def sense_layer(df_input):
     df_s = df_input.copy()
@@ -225,7 +231,8 @@ def sense_layer(df_input):
     return df_s, threshold
 
 # ============================================================
-# PREDICT LAYER
+# PREDICT LAYER — XGBoost forecasts vulnerability probability.
+# Aggregated by hour + month. Outputs: vuln_probability, predict_triggered.
 # ============================================================
 def predict_layer(df_input, model):
     df_out = df_input.copy()
@@ -272,9 +279,14 @@ def predict_layer(df_input, model):
 def act_layer(df_input, reduction_rate_percent, apply_intervention_flag):
     df = df_input.copy()
     df['sense_triggered'] = df['vulnerability_event']
+
+    # SPA is a logic gate (AND), not a threshold trigger.
+    # Both sense AND predict must independently confirm. Either alone = no dispatch.
     df['spa_action_triggered'] = df['sense_triggered'] & df['predict_triggered']
 
-    # Simulated demand curve (55% to 95% of theoretical baseline)
+    # DEMAND MODEL: synthetic envelope, NOT measured telemetry.
+    # Range: 55% → 95% of theoretical baseline.
+    # Label in all charts as "Simulated Demand (Vulnerability-Scaled)"
     base_pct = 0.55
     peak_pct = 0.95
     df['simulated_demand_mw'] = (
@@ -293,7 +305,9 @@ def act_layer(df_input, reduction_rate_percent, apply_intervention_flag):
     else:
         df['grid_saver_reduction_mw'] = 0
 
-    # Thermal rebound (60% of previous hour's reduction)
+    # REBOUND: 60% thermal snapback in next time step.
+    # 85% compliance = behavioral assumption from literature, NOT validated vs Pecan Street.
+    # Silent recovery is not permitted — rebound must always be modeled.
     REBOUND_RATE = 0.60
     df['rebound_mw'] = np.where(
         df['spa_action_triggered'].shift(1).fillna(False),
@@ -1051,7 +1065,7 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
             st.warning("No data available for selected period.")
 
 # ============================================================
-# FOOTER
+# FOOTER (shortened & clarified)
 # ============================================================
 st.markdown(f"""
 <div style='background: #161B22; padding: 15px; border-radius: 8px; border: 1px solid #30363D; text-align: center; margin-top: 20px;'>
@@ -1060,18 +1074,14 @@ st.markdown(f"""
     </p>
     <p style='color: #555; margin: 5px 0 0 0; font-size: 0.75rem;'>
         📡 Sense: Electricity Maps US-TEX-ERCO 2025 | 🧠 Predict: PJM XGBoost 91.3% Recall | ⚡ Act: Pecan Street 2018<br>
-        🔒 SPA dual-confirmation: Action only when BOTH Sense AND Predict independently confirm vulnerability<br>
-        📊 Three‑Layer Baseline (Option A):<br>
-        &nbsp;&nbsp;• Theoretical: {THEORETICAL_BASELINE_MW:,} MW (explanation)<br>
-        &nbsp;&nbsp;• Model max: {MODEL_PEAK_MW:,.0f} MW (95% of theoretical)<br>
-        &nbsp;&nbsp;• Observed peak: {peak_original:,.0f} MW (from data)<br>
+        🔒 SPA dual‑confirmation: Sense AND Predict must both trigger<br>
+        📊 Three‑Layer Baseline: Theoretical {THEORETICAL_BASELINE_MW:,} MW (explanation) | 
+        Model max {MODEL_PEAK_MW:,.0f} MW (envelope) | Observed {peak_original:,.0f} MW (data truth)<br>
+        ⏱️ Hourly resolution | Rebound: 60% snapback | Compliance: 85% assumed — not validated vs Pecan Street<br>
         📌 Notebook validated SPA events: {NOTEBOOK_SPA_EVENTS} per year → annual gross {ANNUAL_GROSS_MWH:,.0f} MWh, net {ANNUAL_NET_MWH:,.0f} MWh
     </p>
-    <p style='color: #555; font-size: 0.7rem; margin-top: 5px;'>
-        ⏱️ <strong>Temporal resolution:</strong> Hourly intervals. Rebound modeled at 60% with 85% compliance.
-    </p>
     <p style='color: #444; margin: 5px 0 0 0; font-size: 0.7rem;'>
-        ⚠️ Educational Prototype — Not for real-time operations.
+        ⚠️ Educational Prototype — Not for real‑time operations.
     </p>
 </div>
 """, unsafe_allow_html=True)
