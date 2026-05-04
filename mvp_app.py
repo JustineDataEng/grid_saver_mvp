@@ -379,7 +379,7 @@ homes = st.sidebar.slider(
 
 apply_intervention_flag = st.sidebar.toggle("Apply Grid Saver Intervention", value=True)
 
-with st.sidebar.expander("ℹ️ How Grid Saver Works"):
+with st.sidebar.expander("How Grid Saver Works"):
     st.markdown(f"""
     **Vulnerability Score (0-100)**
     - **0-39: STABLE** (Normal)
@@ -397,8 +397,8 @@ with st.sidebar.expander("ℹ️ How Grid Saver Works"):
     - Observed data peak: from actual dataset
 
     **HVAC Reduction Model**
-    - HVAC share: {HVAC_SHARE*100:.0f}% → load = {hvac_load_mw:,.0f} MW
-    - {reduction_rate_percent}% HVAC reduction → **{SYSTEM_REDUCTION_MW:.1f} MW** per SPA hour
+    - HVAC share: {HVAC_SHARE*100:.0f}% of total grid load = {hvac_load_mw:,.0f} MW
+    - {reduction_rate_percent}% HVAC reduction of **{SYSTEM_REDUCTION_MW:.1f} MW** per SPA hour
     - Equivalent: {SYSTEM_REDUCTION_MW/THEORETICAL_BASELINE_MW*100:.1f}% of theoretical grid
 
     **Annual Impact (based on {NOTEBOOK_SPA_EVENTS} events)**
@@ -783,7 +783,7 @@ st.markdown(f"""
 • Theoretical baseline (explanation only): <strong>{THEORETICAL_BASELINE_MW:,} MW</strong><br>
 • Model operational max (95% of theoretical): <strong>{MODEL_PEAK_MW:,.0f} MW</strong><br>
 • Observed demand peak from data: <strong>{peak_observed:,.0f} MW</strong><br>
-• HVAC share: {HVAC_SHARE*100:.0f}% → HVAC load = {hvac_load_mw:,.0f} MW<br>
+• HVAC share: {HVAC_SHARE*100:.0f}% of total HVAC load = {hvac_load_mw:,.0f} MW<br>
 • HVAC reduction applied: <strong>{reduction_rate_percent}%</strong><br>
 • System impact per event: <strong>{SYSTEM_REDUCTION_MW:.1f} MW</strong> ({SYSTEM_REDUCTION_MW/THEORETICAL_BASELINE_MW*100:.1f}% of theoretical grid)<br>
 • Annual SPA events (dual‑confirmed): <strong>{NOTEBOOK_SPA_EVENTS}</strong>
@@ -1206,7 +1206,7 @@ st.markdown(f"""
         Three‑Layer Baseline: Theoretical {THEORETICAL_BASELINE_MW:,} MW (explanation) | 
         Model max {MODEL_PEAK_MW:,.0f} MW (envelope) | Observed {peak_observed:,.0f} MW (data truth)<br>
         Hourly resolution | Rebound: 60% snapback | Compliance: 85% assumed — not validated vs Pecan Street<br>
-        Notebook validated SPA events: {NOTEBOOK_SPA_EVENTS} per year → annual gross {ANNUAL_GROSS_MWH:,.0f} MWh, net {ANNUAL_NET_MWH:,.0f} MWh
+        Notebook validated SPA events: {NOTEBOOK_SPA_EVENTS} per year of annual gross {ANNUAL_GROSS_MWH:,.0f} MWh, net {ANNUAL_NET_MWH:,.0f} MWh
     </p>
     <p style='color: #444; margin: 5px 0 0 0; font-size: 0.7rem;'>
         ⚠️ Production readiness requires live SCADA integration and regulatory approval.
