@@ -248,7 +248,7 @@ Prototype notebooks are included for reference to show the multi-source validati
 
 **Justine Adzormado**
 Occupational HSE Professional | Data Scientist | Founder, Grid Saver
-Women Techsters Fellow (Tech4Dev, Class of 2026)
+                       Women Techsters Fellow (Tech4Dev, Class of 2026)
 
 Built from real-world grid challenges observed in Ghana, designed for global deployment.
 
