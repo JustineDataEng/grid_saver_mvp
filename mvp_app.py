@@ -563,7 +563,7 @@ def get_risk_drivers(row, df_full):
 
 
 st.markdown("## ⚠️ Risk Drivers")
-drivers = get_risk_drivers(current_row, VULNERABILITY_THRESHOLD, df)
+drivers = get_risk_drivers(current_row, df)
 for driver in drivers:
     st.markdown(f"- {driver}")
 st.markdown("<br>", unsafe_allow_html=True)
