@@ -1142,7 +1142,6 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
             period_label = f"{report_year}"
 
         if not df_report.empty:
-            # Run act_layer to get SPA columns for this period
             df_report, _ = act_layer(df_report, reduction_rate_percent, apply_intervention_flag)
             avg_vuln = df_report['vulnerability_score'].mean()
             peak_vuln = df_report['vulnerability_score'].max()
@@ -1205,7 +1204,7 @@ st.markdown(f"""
         SPA dual‑confirmation: Sense AND Predict must both trigger<br>
         Three‑Layer Baseline: Theoretical {THEORETICAL_BASELINE_MW:,} MW (explanation) | 
         Model max {MODEL_PEAK_MW:,.0f} MW (envelope) | Observed {peak_observed:,.0f} MW (data truth)<br>
-        Hourly resolution | Rebound: 60% snapback | Compliance: 85% assumed — not validated vs Pecan Street<br>
+        Hourly resolution | Rebound: 60% snapback | Compliance: 85% assumed (not validated vs Pecan Street)<br>
         Notebook validated SPA events: {NOTEBOOK_SPA_EVENTS} per year of annual gross {ANNUAL_GROSS_MWH:,.0f} MWh, net {ANNUAL_NET_MWH:,.0f} MWh
     </p>
     <p style='color: #444; margin: 5px 0 0 0; font-size: 0.7rem;'>
