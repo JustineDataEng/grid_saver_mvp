@@ -1,4 +1,4 @@
-# ⚡ Grid Saver: Adaptive Grid Intelligence Platform
+# Grid Saver: Adaptive Grid Intelligence Platform
 
 Grid Saver is a decision-support system that detects grid stress, predicts vulnerability, and executes coordinated demand-side response using a dual-confirmation control logic.
 **Live Demo:** [gridsavermvp.streamlit.app](https://gridsavermvp.streamlit.app)
