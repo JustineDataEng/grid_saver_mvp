@@ -398,7 +398,7 @@ with st.sidebar.expander("How Grid Saver Works"):
 
     **HVAC Reduction Model**
     - HVAC share: {HVAC_SHARE*100:.0f}% of total grid load = {hvac_load_mw:,.0f} MW
-    - {reduction_rate_percent}% HVAC reduction of **{SYSTEM_REDUCTION_MW:.1f} MW** per SPA hour
+    - {reduction_rate_percent}% HVAC reduction: **{SYSTEM_REDUCTION_MW:.1f} MW** per SPA hour
     - Equivalent: {SYSTEM_REDUCTION_MW/THEORETICAL_BASELINE_MW*100:.1f}% of theoretical grid
 
     **Annual Impact (based on {NOTEBOOK_SPA_EVENTS} events)**
