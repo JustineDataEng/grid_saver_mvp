@@ -1182,7 +1182,7 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
                 export_df = df_report.copy()
                 csv_data = export_df.to_csv(index=False)
                 st.download_button(
-                    "📥 Download Report (CSV)",
+                    "Download Report (CSV)",
                     data=csv_data,
                     file_name=f"GridSaver_{period_label.replace(' ', '_')}.csv",
                     key="report_download"
