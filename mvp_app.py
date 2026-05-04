@@ -1116,7 +1116,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ============================================================
 with st.expander("📄 Reports and Insights (Download CSV)"):
     if live_mode:
-        st.warning("📄 Reports are disabled in Live Mode. Switch to Analysis Mode to generate reports.")
+        st.warning("Reports are disabled in Live Mode. Switch to Analysis Mode to generate reports.")
     else:
         st.markdown("*Select a time period to view grid performance analysis and download a report.*")
         col_r1, col_r2 = st.columns(2)
