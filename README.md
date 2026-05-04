@@ -6,9 +6,9 @@ Grid Saver is a decision-support system that detects grid stress, predicts vulne
 
 
 
-## 📌 Problem
+## Problem
 
-Ghana's power grid has experienced recurring instability driven by peak demand stress and fuel dependency. These challenges are not unique to Ghana — they reflect a global grid management problem.
+Ghana's power grid has experienced recurring instability driven by peak demand stress and fuel dependency. These challenges are not unique to Ghana; they reflect a global grid management problem.
 
 Modern grids face increasing pressure from:
 
@@ -20,7 +20,7 @@ Most systems either react too late, or rely on single-signal triggers that produ
 
 
 
-## ⏳ Why Now
+## Why Now
 
 - Grid instability events are increasing in both emerging and advanced power systems
 - Renewable variability is making demand prediction harder
@@ -30,7 +30,7 @@ Grid Saver addresses all three simultaneously.
 
 
 
-## 💡 Solution
+## Solution
 
 Grid Saver introduces a dual-confirmation intelligence system (SPA) that only acts when two independent signals agree:
 
@@ -41,7 +41,7 @@ This prevents false activations while ensuring action is taken at the right mome
 
 
 
-## 🏗️ System Architecture
+## System Architecture
 
 Grid Saver operates through three independent layers that meet only at the decision point. No layer feeds its output into another. They confirm independently before any action is triggered.
 
@@ -79,7 +79,7 @@ Coordinates residential HVAC demand reduction when both Sense and Predict indepe
 
 
 
-## 🔒 SPA Logic (Core Innovation)
+## SPA Logic (Core Innovation)
 
 Grid Saver does NOT act on a single trigger.
 
@@ -124,9 +124,9 @@ The logic is identical. The data flow is production-grade.
 
 
 
-## 📊 Simulation Model
+## Simulation Model
 
-**Three-Layer Baseline (Option A)**
+**Three-Layer Baseline**
 
 - Theoretical baseline: 70,320 MW (explanation and HVAC decomposition only, never plotted)
 - Model peak envelope: 66,804 MW (95% of theoretical, documented reference, not enforced)
@@ -145,7 +145,7 @@ The logic is identical. The data flow is production-grade.
 
 
 
-## 📈 Validated Impact (Annual Simulation)
+## Validated Impact (Annual Simulation)
 
 | Metric | Value |
 |---|---|
@@ -172,7 +172,7 @@ Note: Ghana grid data is not publicly available for research use. Validation was
 
 
 
-## 🧰 Tech Stack
+## Tech Stack
 
 - **Frontend:** Streamlit
 - **Data Processing:** Pandas, NumPy
@@ -183,7 +183,7 @@ Note: Ghana grid data is not publicly available for research use. Validation was
 
 
 
-## ▶️ How to Run
+## How to Run
 
 ```bash
 pip install -r requirements.txt
@@ -206,7 +206,7 @@ The MVP notebook (gridsaver_mvp.ipynb) must be run first in Google Colab to gene
 
 
 
-## ⚠️ Limitations
+## Limitations
 
 - Uses historical datasets, not real-time SCADA integration
 - Predict layer uses a temporally constructed synthetic demand proxy, not a live demand feed
@@ -216,7 +216,7 @@ The MVP notebook (gridsaver_mvp.ipynb) must be run first in Google Colab to gene
 
 
 
-## 🚀 Future Development
+## Future Development
 
 - Live grid API integration (SCADA, Electricity Maps live feed)
 - Smart device control via thermostat APIs (Ecobee, Google Nest)
@@ -244,10 +244,11 @@ Prototype notebooks are included for reference to show the multi-source validati
 
 
 
-## 👤 Author
+## Author
 
 **Justine Adzormado**
 Occupational HSE Professional | Data Scientist | Founder, Grid Saver
+
 Women Techsters Fellow (Tech4Dev, Class of 2026)
 
 Built from real-world grid challenges observed in Ghana, designed for global deployment.
