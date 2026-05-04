@@ -654,21 +654,21 @@ st.markdown("## Recommended Grid Action")
 current_status_text = current_status
 if current_status_text == 'CRITICAL':
     action_color, action_icon = "#E74C3C", "🔴"
-    action_title = "CRITICAL — Immediate Action Required"
+    action_title = "CRITICAL (Immediate Action Required)"
     if apply_intervention_flag:
-        action_text = f"Reduce residential HVAC load by {reduction_rate_percent}% (~{SYSTEM_REDUCTION_MW:.0f} MW per event)"
+        action_text = f"Reduce residential HVAC load by {reduction_rate_percent}% ({SYSTEM_REDUCTION_MW:.0f} MW per event)"
     else:
-        action_text = "Grid Saver is OFF — monitoring only, no active intervention"
+        action_text = "Grid Saver is OFF (monitoring only), no active intervention"
 elif current_status_text == 'WARNING':
     action_color, action_icon = "#F39C12", "🟡"
-    action_title = "WARNING — Prepare for Intervention"
+    action_title = "WARNING (Prepare for Intervention)"
     if apply_intervention_flag:
         action_text = f"Pre-stage {reduction_rate_percent}% HVAC reduction"
     else:
-        action_text = "Grid Saver is OFF — monitoring only, no active intervention"
+        action_text = "Grid Saver is OFF (monitoring only), no active intervention"
 else:
     action_color, action_icon = "#2ECC71", "🟢"
-    action_title = "STABLE — No Action Required"
+    action_title = "STABLE (No Action Required)"
     action_text = "Grid operating normally. Continue monitoring."
 
 st.markdown(f"""
@@ -783,7 +783,7 @@ st.markdown(f"""
 • Theoretical baseline (explanation only): <strong>{THEORETICAL_BASELINE_MW:,} MW</strong><br>
 • Model operational max (95% of theoretical): <strong>{MODEL_PEAK_MW:,.0f} MW</strong><br>
 • Observed demand peak from data: <strong>{peak_observed:,.0f} MW</strong><br>
-• HVAC share: {HVAC_SHARE*100:.0f}% of total HVAC load = {hvac_load_mw:,.0f} MW<br>
+• HVAC share: {HVAC_SHARE*100:.0f}% of total grid load = {hvac_load_mw:,.0f} MW<br>
 • HVAC reduction applied: <strong>{reduction_rate_percent}%</strong><br>
 • System impact per event: <strong>{SYSTEM_REDUCTION_MW:.1f} MW</strong> ({SYSTEM_REDUCTION_MW/THEORETICAL_BASELINE_MW*100:.1f}% of theoretical grid)<br>
 • Annual SPA events (dual‑confirmed): <strong>{NOTEBOOK_SPA_EVENTS}</strong>
