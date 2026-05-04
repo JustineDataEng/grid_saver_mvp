@@ -483,7 +483,7 @@ st.markdown(f"""
 # ============================================================
 # GRID STATUS METRICS
 # ============================================================
-st.markdown("## ⚡ Grid Status")
+st.markdown("## Grid Status")
 current_score = current_row['vulnerability_score']
 current_status = current_row['grid_status']
 current_carbon = current_row[CARBON_COL]
