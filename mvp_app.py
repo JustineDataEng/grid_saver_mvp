@@ -80,7 +80,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# LOCKED NOTEBOOK TRUTH (NEVER RECOMPUTE)
+# LOCKED NOTEBOOK TRUTH
 # Annual totals are immutable. SPA=154, Gross=108,293 MWh, Net=43,317 MWh.
 # ============================================================
 NOTEBOOK_SENSE_TRIGGERS = 1316
@@ -88,13 +88,13 @@ NOTEBOOK_PREDICT_TRIGGERS = 1659
 NOTEBOOK_SPA_EVENTS = 154
 
 # ============================================================
-# THREE-LAYER BASELINE (Option A)
+# THREE-LAYER BASELINE
 # Layer 1 — THEORETICAL: explanation + HVAC decomposition only. Never plotted.
 # Layer 2 — MODEL PEAK:  simulation envelope ceiling. Documented, not enforced.
 # Layer 3 — OBSERVED:    runtime max from data. Never overridden.
 # ============================================================
 THEORETICAL_BASELINE_MW = 70320          # explanation only, used for HVAC narrative
-MODEL_PEAK_MW = THEORETICAL_BASELINE_MW * 0.95   # 66,804 MW — reference only, not enforced
+MODEL_PEAK_MW = THEORETICAL_BASELINE_MW * 0.95   # 66,804 MW (reference only, not enforced)
 
 HVAC_SHARE = 0.25
 HVAC_REDUCTION_RATE = 0.04
@@ -153,7 +153,7 @@ def load_model():
     try:
         return joblib.load("gridsaver_model.pkl")
     except FileNotFoundError:
-        st.error("❌ Model file 'gridsaver_model.pkl' not found.")
+        st.error("Model file 'gridsaver_model.pkl' not found.")
         st.stop()
 
 @st.cache_data
@@ -163,7 +163,7 @@ def load_data():
         df['Datetime (UTC)'] = pd.to_datetime(df['Datetime (UTC)'])
         return df.sort_values('Datetime (UTC)').reset_index(drop=True)
     except FileNotFoundError:
-        st.error("❌ Data file 'data_sample.csv' not found.")
+        st.error("Data file 'data_sample.csv' not found.")
         st.stop()
 
 with st.spinner("Loading Grid Saver..."):
@@ -171,7 +171,7 @@ with st.spinner("Loading Grid Saver..."):
     df_raw = load_data()
 
 # ============================================================
-# FEATURE ENGINEERING (unchanged)
+# FEATURE ENGINEERING
 # ============================================================
 def engineer_features(df_input):
     df_fe = df_input.copy()
@@ -208,7 +208,7 @@ FEATURE_COLS = [
 ]
 
 # ============================================================
-# SENSE LAYER — detects grid stress from carbon + CFE signals.
+# SENSE LAYER - detects grid stress from carbon + CFE signals.
 # Outputs: vulnerability_score (0-100), grid_status, vulnerability_event.
 # ============================================================
 def sense_layer(df_input):
@@ -238,7 +238,7 @@ def sense_layer(df_input):
     return df_s, threshold
 
 # ============================================================
-# PREDICT LAYER — XGBoost forecasts vulnerability probability.
+# PREDICT LAYER - XGBoost forecasts vulnerability probability.
 # Aggregated by hour + month. Outputs: vuln_probability, predict_triggered.
 # ============================================================
 def predict_layer(df_input, model):
@@ -314,7 +314,7 @@ def act_layer(df_input, reduction_rate_percent, apply_intervention_flag):
 
     # REBOUND: 60% thermal snapback in next time step.
     # 85% compliance = behavioral assumption from literature, NOT validated vs Pecan Street.
-    # Silent recovery is not permitted — rebound must always be modeled.
+    # Silent recovery is not permitted (rebound must always be modeled).
     REBOUND_RATE = 0.60
     df['rebound_mw'] = np.where(
         df['spa_action_triggered'].shift(1).fillna(False),
@@ -330,7 +330,7 @@ def act_layer(df_input, reduction_rate_percent, apply_intervention_flag):
     return df, total_mw_saved
 
 # ============================================================
-# RUN FULL PIPELINE (once)
+# RUN FULL PIPELINE
 # ============================================================
 df, VULNERABILITY_THRESHOLD = sense_layer(df_raw)
 df['hour'] = df[DATETIME_COL].dt.hour
@@ -571,7 +571,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ============================================================
 # VULNERABILITY TREND CHART
 # ============================================================
-st.markdown("## 📈 Grid Vulnerability Score")
+st.markdown("## Grid Vulnerability Score")
 color_map = {'STABLE': '#2ECC71', 'WARNING': '#F39C12', 'CRITICAL': '#E74C3C'}
 fig_trend = go.Figure()
 for status in ['STABLE', 'WARNING', 'CRITICAL']:
@@ -603,7 +603,7 @@ st.plotly_chart(fig_trend, width='stretch')
 
 st.markdown("""
 <div class='info-box'>
-📌 <strong>Chart Guide:</strong> Green=STABLE (&lt;40), Yellow=WARNING (40-69), Red=CRITICAL (≥70)<br>
+<strong>Chart Guide:</strong> Green=STABLE (&lt;40), Yellow=WARNING (40-69), Red=CRITICAL (≥70)<br>
 • Purple dashed line = 24hr Risk Projection (XGBoost temporal pattern)<br>
 • Red dashed line = Vulnerability threshold (top 15% stressed hours)
 </div>
@@ -613,7 +613,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ============================================================
 # PEAK VULNERABILITY TIMELINE (unchanged)
 # ============================================================
-st.markdown("## 🕒 Peak Vulnerability Timeline")
+st.markdown("## Peak Vulnerability Timeline")
 col_left, col_right = st.columns(2)
 
 with col_left:
@@ -742,7 +742,7 @@ elif current_status_text == 'WARNING':
 - Prepare for potential dispatch within next 2–4 hours
 """)
     if current_prob >= DECISION_THRESHOLD:
-        st.markdown("📈 Elevated risk signal — escalation likely")
+        st.markdown("Elevated risk signal — escalation likely")
 else:
     st.markdown("""
 🟢 **Operator Status**
@@ -753,7 +753,7 @@ else:
 if apply_intervention_flag:
     st.markdown(f"""
     <div style='background:#161B22; border-left:4px solid #2ECC71; padding:10px 14px; border-radius:6px; margin-top:12px;'>
-        <span style='color:#2ECC71; font-size:0.9rem;'>📊 <strong>Impact Summary (Annual, Notebook Truth)</strong></span><br>
+        <span style='color:#2ECC71; font-size:0.9rem;'><strong>Impact Summary (Annual, Notebook Truth)</strong></span><br>
         <span style='color:#CCC; font-size:0.85rem;'>
             Per SPA event: {SYSTEM_REDUCTION_MW:.0f} MW<br>
             Gross annual reduction: {ANNUAL_GROSS_MWH:,.0f} MWh<br>
@@ -765,7 +765,7 @@ if apply_intervention_flag:
 else:
     st.markdown("""
     <div style='background:#161B22; border-left:4px solid #888; padding:10px 14px; border-radius:6px; margin-top:12px;'>
-        <span style='color:#888; font-size:0.9rem;'>⚙️ <strong>Grid Saver Disabled</strong></span><br>
+        <span style='color:#888; font-size:0.9rem;'><strong>Grid Saver Disabled</strong></span><br>
         <span style='color:#999; font-size:0.85rem;'>
             Toggle "Apply Grid Saver Intervention" in the sidebar to see load reduction impact.
         </span>
@@ -873,7 +873,7 @@ if apply_intervention_flag:
     """, unsafe_allow_html=True)
     st.markdown(f"""
     <div class='success-box'>
-    🛡️ <strong>Critical Events Intervened (Annual):</strong> {NOTEBOOK_SPA_EVENTS} SPA events
+    <strong>Critical Events Intervened (Annual):</strong> {NOTEBOOK_SPA_EVENTS} SPA events
     <br>Based on dual-confirmation (Sense + Predict) logic from notebook.
     </div>
     """, unsafe_allow_html=True)
@@ -882,7 +882,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ============================================================
 # BEFORE / AFTER CHART (preserved structure)
 # ============================================================
-st.markdown("#### 📉 Before vs After Grid Saver — Demand with Intervention")
+st.markdown("#### Before vs After Grid Saver - Demand with Intervention")
 fig = make_subplots(
     rows=2, cols=1,
     subplot_titles=('Grid Demand (MW)', 'Load Reduction (MW)'),
@@ -890,7 +890,7 @@ fig = make_subplots(
     shared_xaxes=True
 )
 
-# BEFORE line (always visible) – label fixed
+# BEFORE line (always visible)
 fig.add_trace(go.Scatter(
     x=df_view[DATETIME_COL],
     y=simulated_curve,
@@ -943,7 +943,7 @@ st.plotly_chart(fig, width='stretch')
 
 st.markdown("""
 <div class='info-box'>
-📌 <strong>Chart Guide:</strong><br>
+<strong>Chart Guide:</strong><br>
 • <span style='color:#E74C3C'>🔴 Red line:</span> Simulated demand (vulnerability‑scaled, 55–95% of theoretical baseline)<br>
 • <span style='color:#2ECC71'>🟢 Green dashed line:</span> Demand after Grid Saver intervention (ONLY shown when toggle is ON)<br>
 • <span style='color:#F39C12'>🟠 Orange bars:</span> Load reduction achieved during SPA-triggered hours (zero when toggle OFF)<br>
@@ -966,7 +966,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ============================================================
 # 6-HOUR BEFORE/AFTER PEAK WINDOW (inside expander)
 # ============================================================
-with st.expander("📉 6-Hour Before vs After Analysis (around peak demand)"):
+with st.expander("6-Hour Before vs After Analysis (around peak demand)"):
     half_window = pd.Timedelta(hours=6)
     window_mask = (df_view[DATETIME_COL] >= peak_time - half_window) & (df_view[DATETIME_COL] <= peak_time + half_window)
     window_df = df_view[window_mask].copy()
@@ -1019,7 +1019,7 @@ with st.expander("📉 6-Hour Before vs After Analysis (around peak demand)"):
 # IMPACT AT SCALE (four square boxes horizontally, plus Impact Level)
 # ============================================================
 st.divider()
-st.markdown("## 📊 Impact at Scale")
+st.markdown("## Impact at Scale")
 st.markdown("*This section shows what-if scaling scenarios. Adjust the slider above to see different scales.*")
 
 scaled_reduction_kw = compute_scaled_reduction_kw(homes, reduction_rate_percent)
@@ -1083,7 +1083,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ============================================================
 # SYSTEM ARCHITECTURE
 # ============================================================
-st.markdown("## 🏗️ System Architecture")
+st.markdown("## System Architecture")
 col_a, col_b, col_c = st.columns(3)
 with col_a:
     st.markdown("""
@@ -1193,7 +1193,7 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
             st.warning("No data available for selected period.")
 
 # ============================================================
-# FOOTER (shortened & clarified)
+# FOOTER
 # ============================================================
 st.markdown(f"""
 <div style='background: #161B22; padding: 15px; border-radius: 8px; border: 1px solid #30363D; text-align: center; margin-top: 20px;'>
@@ -1201,12 +1201,12 @@ st.markdown(f"""
         Grid Saver | Adaptive Grid Intelligence Platform | Justine Adzormado
     </p>
     <p style='color: #555; margin: 5px 0 0 0; font-size: 0.75rem;'>
-        📡 Sense: Electricity Maps US-TEX-ERCO 2025 | 🧠 Predict: PJM XGBoost 91.3% Recall | ⚡ Act: Pecan Street 2018<br>
-        🔒 SPA dual‑confirmation: Sense AND Predict must both trigger<br>
-        📊 Three‑Layer Baseline: Theoretical {THEORETICAL_BASELINE_MW:,} MW (explanation) | 
+        👁️ Sense: Electricity Maps US-TEX-ERCO 2025 | 🧠 Predict: PJM XGBoost 91.3% Recall | ⚡ Act: Pecan Street 2018<br>
+        SPA dual‑confirmation: Sense AND Predict must both trigger<br>
+        Three‑Layer Baseline: Theoretical {THEORETICAL_BASELINE_MW:,} MW (explanation) | 
         Model max {MODEL_PEAK_MW:,.0f} MW (envelope) | Observed {peak_observed:,.0f} MW (data truth)<br>
-        ⏱️ Hourly resolution | Rebound: 60% snapback | Compliance: 85% assumed — not validated vs Pecan Street<br>
-        📌 Notebook validated SPA events: {NOTEBOOK_SPA_EVENTS} per year → annual gross {ANNUAL_GROSS_MWH:,.0f} MWh, net {ANNUAL_NET_MWH:,.0f} MWh
+        Hourly resolution | Rebound: 60% snapback | Compliance: 85% assumed — not validated vs Pecan Street<br>
+        Notebook validated SPA events: {NOTEBOOK_SPA_EVENTS} per year → annual gross {ANNUAL_GROSS_MWH:,.0f} MWh, net {ANNUAL_NET_MWH:,.0f} MWh
     </p>
     <p style='color: #444; margin: 5px 0 0 0; font-size: 0.7rem;'>
         ⚠️ Production readiness requires live SCADA integration and regulatory approval.
@@ -1214,7 +1214,3 @@ st.markdown(f"""
     </p>
 </div>
 """, unsafe_allow_html=True)
-
-# ============================================================
-# END OF APP
-# ============================================================
