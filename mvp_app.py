@@ -611,7 +611,7 @@ st.markdown("""
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
-# PEAK VULNERABILITY TIMELINE (unchanged)
+# PEAK VULNERABILITY TIMELINE
 # ============================================================
 st.markdown("## Peak Vulnerability Timeline")
 col_left, col_right = st.columns(2)
@@ -633,7 +633,7 @@ with col_right:
         colors = ['#E74C3C' if s >= 70 else '#F39C12' if s >= 40 else '#2ECC71' for s in daily.values]
         fig_daily = go.Figure(go.Bar(x=[str(d) for d in daily.index], y=daily.values, marker_color=colors))
         fig_daily.update_layout(paper_bgcolor='#161B22', plot_bgcolor='#161B22', font=dict(color='white'),
-                                title=dict(text=f'Avg Daily — {selected_month}', font=dict(size=13)), height=300)
+                                title=dict(text=f'Avg Daily - {selected_month}', font=dict(size=13)), height=300)
         st.plotly_chart(fig_daily, width='stretch')
     else:
         monthly = df_view.groupby('month_name')['vulnerability_score'].mean().round(1)
