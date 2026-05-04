@@ -128,7 +128,7 @@ month_order = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov'
 # HELPER FUNCTIONS
 # ============================================================
 def count_spa_events(trigger_series):
-    """Count SPA events using rising edge detection (kept for reference only)."""
+    """Count SPA events using rising edge detection (for reference only)."""
     if len(trigger_series) == 0:
         return 0
     trigger_array = (trigger_series == True).fillna(False).values
@@ -368,7 +368,7 @@ selected_month = st.sidebar.selectbox("Select Month", ['All Year'] + months_pres
 reduction_rate_percent = st.sidebar.slider(
     "HVAC Reduction Rate (%)",
     min_value=1, max_value=10, value=4, step=1,
-    help="Reduction applied to residential HVAC load (25% of grid). 4% → 703 MW per event."
+    help="Reduction applied to residential HVAC load (25% of grid). 4% (703 MW per event)."
 )
 
 homes = st.sidebar.slider(
@@ -382,16 +382,16 @@ apply_intervention_flag = st.sidebar.toggle("Apply Grid Saver Intervention", val
 with st.sidebar.expander("ℹ️ How Grid Saver Works"):
     st.markdown(f"""
     **Vulnerability Score (0-100)**
-    - **0-39: STABLE** — Normal
-    - **40-69: WARNING** — Elevated risk
-    - **70-100: CRITICAL** — Action required
+    - **0-39: STABLE** (Normal)
+    - **40-69: WARNING** (Elevated risk)
+    - **70-100: CRITICAL** (Action required)
 
     **SPA Dual-Confirmation** (Notebook truth – immutable)
     - Sense triggers: **{NOTEBOOK_SENSE_TRIGGERS}** hours
     - Predict triggers: **{NOTEBOOK_PREDICT_TRIGGERS}** hours
     - SPA events (dual‑confirmed): **{NOTEBOOK_SPA_EVENTS}** hours
 
-    **Three‑Layer Baseline (Option A)**
+    **Three‑Layer Baseline**
     - Theoretical baseline (explanation only): **{THEORETICAL_BASELINE_MW:,} MW**
     - Model operational max: **{MODEL_PEAK_MW:,.0f} MW** (95% of theoretical)
     - Observed data peak: from actual dataset
@@ -549,11 +549,11 @@ def get_risk_drivers(row, df_full):
 
     # CFE driver
     if cfe_pct < 0.3:
-        drivers.append("🔴 Clean energy availability is low — limited buffer against emissions and stress")
+        drivers.append("🔴 Clean energy availability is low (limited buffer against emissions and stress)")
     elif cfe_pct < 0.6:
-        drivers.append("🟡 Moderate clean energy contribution — system partially supported")
+        drivers.append("🟡 Moderate clean energy contribution (system partially supported)")
     else:
-        drivers.append("🟢 Strong clean energy contribution — stable supply conditions")
+        drivers.append("🟢 Strong clean energy contribution (stable supply conditions)")
 
     # Predictive driver
     if row.get('vuln_probability', 0) >= DECISION_THRESHOLD:
@@ -603,7 +603,7 @@ st.plotly_chart(fig_trend, width='stretch')
 
 st.markdown("""
 <div class='info-box'>
-<strong>Chart Guide:</strong> Green=STABLE (&lt;40), Yellow=WARNING (40-69), Red=CRITICAL (≥70)<br>
+<strong>Chart Guide:</strong> Green=STABLE (&lt;40), Yellow=WARNING (40-69), Red=CRITICAL (>=70)<br>
 • Purple dashed line = 24hr Risk Projection (XGBoost temporal pattern)<br>
 • Red dashed line = Vulnerability threshold (top 15% stressed hours)
 </div>
@@ -649,7 +649,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ============================================================
 # RECOMMENDED GRID ACTION
 # ============================================================
-st.markdown("## 🎯 Recommended Grid Action")
+st.markdown("## Recommended Grid Action")
 
 current_status_text = current_status
 if current_status_text == 'CRITICAL':
@@ -708,12 +708,12 @@ with st.expander("🧠 AI Decision Explanation", expanded=False):
 # ============================================================
 # SMART RECOMMENDATIONS (Operator-grade actions)
 # ============================================================
-st.markdown("## 🧠 Smart Recommendations")
+st.markdown("## Smart Recommendations")
 dispatch_score = current_score * 0.5 + current_prob * 30 + min(current_carbon/10, 20)
 dispatch_score = round(dispatch_score, 1)
 st.markdown(f"""
 <div style='background:#161B22; border:1px solid #F39C12; padding:12px 16px; border-radius:8px; margin-bottom:12px;'>
-    <span style='color:#F39C12; font-weight:bold;'>⚡ Dispatch Priority: {dispatch_score}/100</span>
+    <span style='color:#F39C12; font-weight:bold;'>Dispatch Priority: {dispatch_score}/100</span>
     <p style='color:#888; margin:5px 0 0 0; font-size:0.75rem;'>
         Formula: (vulnerability × 0.5) + (risk_probability × 30) + min(carbon/10, 20)
     </p>
@@ -724,25 +724,25 @@ if current_status_text == 'CRITICAL':
     if apply_intervention_flag:
         st.markdown(f"""
 🔴 **Operator Action Required**
-- Dispatch {reduction_rate_percent}% residential HVAC demand response (~{SYSTEM_REDUCTION_MW:.0f} MW per event)
-- Target peak window (next 1–2 hours)
+- Dispatch {reduction_rate_percent}% residential HVAC demand response ({SYSTEM_REDUCTION_MW:.0f} MW per event)
+- Target peak window (next 1-2 hours)
 - Monitor rebound risk following load reduction
 """)
         if current_row.get('spa_action_triggered', False):
-            st.markdown("✅ SPA dual-confirmation achieved — dispatch approved")
+            st.markdown("✅ SPA dual-confirmation achieved (dispatch approved)")
         else:
-            st.markdown("⚠️ Partial confirmation — controlled reduction recommended")
+            st.markdown("⚠️ Partial confirmation (controlled reduction recommended)")
     else:
-        st.markdown("🔴 Grid Saver OFF — enable intervention to allow dispatch actions")
+        st.markdown("🔴 Grid Saver OFF (enable intervention to allow dispatch actions)")
 elif current_status_text == 'WARNING':
     st.markdown("""
 🟡 **Operator Advisory**
 - Pre-stage demand response resources
 - Increase monitoring frequency
-- Prepare for potential dispatch within next 2–4 hours
+- Prepare for potential dispatch within next 2-4 hours
 """)
     if current_prob >= DECISION_THRESHOLD:
-        st.markdown("Elevated risk signal — escalation likely")
+        st.markdown("Elevated risk signal (escalation likely)")
 else:
     st.markdown("""
 🟢 **Operator Status**
@@ -776,10 +776,10 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ============================================================
 # LOAD REDUCTION SIMULATION (using locked notebook values)
 # ============================================================
-st.markdown("## ⚡ Load Reduction Simulation")
+st.markdown("## Load Reduction Simulation")
 st.markdown(f"""
 <div class='info-box'>
-📌 <strong>Simulation Basis (Three‑Layer Baseline – Option A)</strong><br>
+<strong>Simulation Basis (Three‑Layer Baseline)</strong><br>
 • Theoretical baseline (explanation only): <strong>{THEORETICAL_BASELINE_MW:,} MW</strong><br>
 • Model operational max (95% of theoretical): <strong>{MODEL_PEAK_MW:,.0f} MW</strong><br>
 • Observed demand peak from data: <strong>{peak_observed:,.0f} MW</strong><br>
@@ -802,7 +802,7 @@ col_s3.metric("SPA Events (year)", f"{NOTEBOOK_SPA_EVENTS}")
 if apply_intervention_flag:
     st.markdown(f"""
     <div style='background:#161B22; border-left:5px solid #2ECC71; padding:15px; border-radius:8px; margin:15px 0;'>
-        <h3 style='color:#2ECC71; margin:0;'>⚡ Load Reduction Analysis (Annual)</h3>
+        <h3 style='color:#2ECC71; margin:0;'>Load Reduction Analysis (Annual)</h3>
         <p style='color:white; font-size:1.2rem; margin:5px 0;'>
             Gross Load Reduced: {ANNUAL_GROSS_MWH:,.2f} MWh
         </p>
@@ -820,7 +820,7 @@ if apply_intervention_flag:
 else:
     st.markdown("""
     <div style='background:#161B22; border-left:5px solid #888; padding:15px; border-radius:8px; margin:15px 0;'>
-        <h3 style='color:#888; margin:0;'>⚡ Load Reduction Analysis</h3>
+        <h3 style='color:#888; margin:0;'>Load Reduction Analysis</h3>
         <p style='color:#888; font-size:1rem; margin:5px 0;'>
             Grid Saver intervention is currently <strong>DISABLED</strong>.
         </p>
@@ -868,7 +868,7 @@ with col_peak4:
 if apply_intervention_flag:
     st.markdown(f"""
     <p style='color:#888; font-size:0.8rem; margin-top:6px;'>
-    ⚡ <strong>Max Reduction During SPA Events:</strong> {SYSTEM_REDUCTION_MW:.0f} MW per event
+    <strong>Max Reduction During SPA Events:</strong> {SYSTEM_REDUCTION_MW:.0f} MW per event
     </p>
     """, unsafe_allow_html=True)
     st.markdown(f"""
@@ -944,7 +944,7 @@ st.plotly_chart(fig, width='stretch')
 st.markdown("""
 <div class='info-box'>
 <strong>Chart Guide:</strong><br>
-• <span style='color:#E74C3C'>🔴 Red line:</span> Simulated demand (vulnerability‑scaled, 55–95% of theoretical baseline)<br>
+• <span style='color:#E74C3C'>🔴 Red line:</span> Simulated demand (vulnerability‑scaled, 55-95% of theoretical baseline)<br>
 • <span style='color:#2ECC71'>🟢 Green dashed line:</span> Demand after Grid Saver intervention (ONLY shown when toggle is ON)<br>
 • <span style='color:#F39C12'>🟠 Orange bars:</span> Load reduction achieved during SPA-triggered hours (zero when toggle OFF)<br>
 • <span style='color:#FFFFFF'>⭐ White star:</span> Peak demand timestamp
@@ -956,9 +956,9 @@ st.markdown("""
 ⚠️ <strong>Thermal Rebound (Snapback) Effect:</strong><br>
 When HVAC systems are suppressed during an SPA event, they turn back on simultaneously afterward,
 creating a secondary demand spike. Grid Saver models this using:<br>
-• <strong>85% Compliance Rate</strong> — behavioral assumption from literature, not validated vs Pecan Street.<br>
-• <strong>60% Rebound Rate</strong> — 60% of shed load returns post-event<br>
-• <strong>Corrected rebound timing</strong> — rebound occurs in the hour following a reduction.
+• <strong>85% Compliance Rate</strong>: behavioral assumption from literature, not validated vs Pecan Street.<br>
+• <strong>60% Rebound Rate</strong>: 60% of shed load returns post-event<br>
+• <strong>Corrected rebound timing</strong>: rebound occurs in the hour following a reduction.
 </div>
 """, unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
@@ -1008,7 +1008,7 @@ with st.expander("6-Hour Before vs After Analysis (around peak demand)"):
         st.plotly_chart(fig_window, width='stretch')
         st.markdown("""
         <div class='info-box'>
-        🔍 <strong>6-Hour Peak Window:</strong> Shows the 6 hours before and after the peak demand moment.
+        <strong>6-Hour Peak Window:</strong> Shows the 6 hours before and after the peak demand moment.
         This highlights how Grid Saver intervention affects the most critical period.
         </div>
         """, unsafe_allow_html=True)
@@ -1116,7 +1116,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ============================================================
 with st.expander("📄 Reports and Insights (Download CSV)"):
     if live_mode:
-        st.warning("📊 Reports are disabled in Live Mode. Switch to Analysis Mode to generate reports.")
+        st.warning("📄 Reports are disabled in Live Mode. Switch to Analysis Mode to generate reports.")
     else:
         st.markdown("*Select a time period to view grid performance analysis and download a report.*")
         col_r1, col_r2 = st.columns(2)
@@ -1176,7 +1176,7 @@ with st.expander("📄 Reports and Insights (Download CSV)"):
             fig_report.update_layout(paper_bgcolor='#161B22', plot_bgcolor='#161B22',
                                       font=dict(color='white'), height=300)
             st.plotly_chart(fig_report, width='stretch')
-            st.info(f"📊 {period_label}: {spa_events_period} SPA events in this period (notebook full-year total: {NOTEBOOK_SPA_EVENTS})")
+            st.info(f"{period_label}: {spa_events_period} SPA events in this period (notebook full-year total: {NOTEBOOK_SPA_EVENTS})")
 
             try:
                 export_df = df_report.copy()
