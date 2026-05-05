@@ -1073,13 +1073,16 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown("""
-<div class='warning-box'>
-⚠️ <strong>Scaling assumption:</strong> Linear aggregation of residential load response (0.0920 kW per home at 4% reduction).
-Real-world performance may vary due to behavioral diversity, device heterogeneity,
-and rebound effects following coordinated load reduction.
-</div>
-""", unsafe_allow_html=True)
+with st.expander("⚠️ Scaling Assumptions & Limitations"):
+    st.markdown("""
+    <div class='warning-box'>
+    Linear aggregation assumed (0.0920 kW per home at 4% reduction).<br><br>
+    Real-world variation factors:<br>
+    • Behavioral diversity<br>
+    • Device heterogeneity<br>
+    • Rebound effects following coordinated load reduction
+    </div>
+    """, unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
