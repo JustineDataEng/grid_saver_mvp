@@ -601,13 +601,14 @@ fig_trend.update_layout(
 )
 st.plotly_chart(fig_trend, width='stretch')
 
-st.markdown("""
-<div class='info-box'>
-<strong>Chart Guide:</strong> Green=STABLE (&lt;40), Yellow=WARNING (40-69), Red=CRITICAL (>=70)<br>
-• Purple dashed line = 24hr Risk Projection (XGBoost temporal pattern)<br>
-• Red dashed line = Vulnerability threshold (top 15% stressed hours)
-</div>
-""", unsafe_allow_html=True)
+with st.expander("🔍 How to read this chart"):
+    st.markdown("""
+    <div class='info-box'>
+    <strong>Chart Guide:</strong> Green=STABLE (&lt;40), Yellow=WARNING (40-69), Red=CRITICAL (>=70)<br>
+    • Purple dashed line = 24hr Risk Projection (XGBoost temporal pattern)<br>
+    • Red dashed line = Vulnerability threshold (top 15% stressed hours)
+    </div>
+    """, unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
