@@ -743,7 +743,7 @@ elif current_status_text == 'WARNING':
 - Prepare for potential dispatch within next 2-4 hours
 """)
     if current_prob >= DECISION_THRESHOLD:
-        st.markdown("Elevated risk signal (escalation likely)")
+        st.markdown("📈 Elevated risk signal (escalation likely)")
 else:
     st.markdown("""
 🟢 **Operator Status**
@@ -751,19 +751,8 @@ else:
 - Maintain standard monitoring
 """)
 
-if apply_intervention_flag:
-    st.markdown(f"""
-    <div style='background:#161B22; border-left:4px solid #2ECC71; padding:10px 14px; border-radius:6px; margin-top:12px;'>
-        <span style='color:#2ECC71; font-size:0.9rem;'><strong>Impact Summary (Annual, Notebook Truth)</strong></span><br>
-        <span style='color:#CCC; font-size:0.85rem;'>
-            Per SPA event: {SYSTEM_REDUCTION_MW:.0f} MW<br>
-            Gross annual reduction: {ANNUAL_GROSS_MWH:,.0f} MWh<br>
-            Net after rebound: {ANNUAL_NET_MWH:,.0f} MWh<br>
-            Based on {NOTEBOOK_SPA_EVENTS} SPA events per year
-        </span>
-    </div>
-    """, unsafe_allow_html=True)
-else:
+# Only show disabled message when intervention is OFF (no duplicate impact summary)
+if not apply_intervention_flag:
     st.markdown("""
     <div style='background:#161B22; border-left:4px solid #888; padding:10px 14px; border-radius:6px; margin-top:12px;'>
         <span style='color:#888; font-size:0.9rem;'><strong>Grid Saver Disabled</strong></span><br>
@@ -772,7 +761,9 @@ else:
         </span>
     </div>
     """, unsafe_allow_html=True)
+
 st.markdown("<br>", unsafe_allow_html=True)
+
 
 # ============================================================
 # LOAD REDUCTION SIMULATION (using locked notebook values)
