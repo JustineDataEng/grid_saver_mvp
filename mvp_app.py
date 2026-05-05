@@ -1077,13 +1077,12 @@ with st.expander("⚠️ Scaling Assumptions & Limitations"):
     st.markdown("""
     <div class='warning-box'>
     Linear aggregation assumed (0.0920 kW per home at 4% reduction).<br><br>
-    Real-world variation factors:<br>
+    Real-world performance may vary due to:<br>
     • Behavioral diversity<br>
     • Device heterogeneity<br>
     • Rebound effects following coordinated load reduction
     </div>
     """, unsafe_allow_html=True)
-st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
 # SYSTEM ARCHITECTURE
