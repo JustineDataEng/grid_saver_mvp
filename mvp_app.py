@@ -768,27 +768,6 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ============================================================
 # LOAD REDUCTION SIMULATION (using locked notebook values)
 # ============================================================
-with st.expander("Simulation Details & Assumptions"):
-    st.markdown(f"""
-    <div class='info-box'>
-    <strong>Three-Layer Baseline</strong><br>
-    • Theoretical baseline: {THEORETICAL_BASELINE_MW:,} MW<br>
-    • Model max (95%): {MODEL_PEAK_MW:,.0f} MW<br>
-    • Observed peak: {peak_observed:,.0f} MW<br><br>
-
-    <strong>HVAC Model</strong><br>
-    • HVAC share: {HVAC_SHARE*100:.0f}% ({hvac_load_mw:,.0f} MW)<br>
-    • Reduction applied: {reduction_rate_percent}%<br>
-    • Per-event impact: {SYSTEM_REDUCTION_MW:.1f} MW<br><br>
-
-    <strong>Annual Logic</strong><br>
-    • SPA events: {NOTEBOOK_SPA_EVENTS}<br>
-    • Gross: {ANNUAL_GROSS_MWH:,.0f} MWh<br>
-    • Rebound: {ANNUAL_REBOUND_MWH:,.0f} MWh<br>
-    • Net: {ANNUAL_NET_MWH:,.0f} MWh
-    </div>
-    """, unsafe_allow_html=True)
-
 if reduction_rate_percent != 4:
     st.warning(f"⚠️ Validated at 4% HVAC reduction = {SYSTEM_REDUCTION_MW:.1f} MW ({SYSTEM_REDUCTION_MW/THEORETICAL_BASELINE_MW*100:.1f}% grid impact). Results at {reduction_rate_percent}% are proportionally scaled.")
 
@@ -816,6 +795,28 @@ if apply_intervention_flag:
         </p>
     </div>
     """, unsafe_allow_html=True)
+
+    # Simulation Details & Assumptions expander
+    with st.expander("Simulation Details & Assumptions"):
+        st.markdown(f"""
+        <div class='info-box'>
+        <strong>Three-Layer Baseline</strong><br>
+        • Theoretical baseline: {THEORETICAL_BASELINE_MW:,} MW<br>
+        • Model max (95%): {MODEL_PEAK_MW:,.0f} MW<br>
+        • Observed peak: {peak_observed:,.0f} MW<br><br>
+
+        <strong>HVAC Model</strong><br>
+        • HVAC share: {HVAC_SHARE*100:.0f}% ({hvac_load_mw:,.0f} MW)<br>
+        • Reduction applied: {reduction_rate_percent}%<br>
+        • Per-event impact: {SYSTEM_REDUCTION_MW:.1f} MW<br><br>
+
+        <strong>Annual Logic</strong><br>
+        • SPA events: {NOTEBOOK_SPA_EVENTS}<br>
+        • Gross: {ANNUAL_GROSS_MWH:,.0f} MWh<br>
+        • Rebound: {ANNUAL_REBOUND_MWH:,.0f} MWh<br>
+        • Net: {ANNUAL_NET_MWH:,.0f} MWh
+        </div>
+        """, unsafe_allow_html=True)
 else:
     st.markdown("""
     <div style='background:#161B22; border-left:5px solid #888; padding:15px; border-radius:8px; margin:15px 0;'>
@@ -829,14 +830,14 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
-# Peak reduction – small text boxes (aligned with Impact at Scale style)
+# Peak reduction
 col_peak1, col_peak2, col_peak3, col_peak4 = st.columns(4)
 
 with col_peak1:
     st.markdown(f"""
     <div class='metric-card'>
         <p style='color:#888; margin:0; font-size:1.3rem;'>Observed Peak</p>
-        <h2 style='color:#E74C3C; margin:0; font-size:1.3rem;'>{peak_observed:,.0f} MW</h3>
+        <h2 style='color:#E74C3C; margin:0; font-size:1.3rem;'>{peak_observed:,.0f} MW</h2>
     </div>
     """, unsafe_allow_html=True)
 
@@ -844,7 +845,7 @@ with col_peak2:
     st.markdown(f"""
     <div class='metric-card'>
         <p style='color:#888; margin:0; font-size:1.3rem;'>After Grid Saver</p>
-        <h2 style='color:#2ECC71; margin:0; font-size:1.3rem;'>{peak_optimized:,.0f} MW</h3>
+        <h2 style='color:#2ECC71; margin:0; font-size:1.3rem;'>{peak_optimized:,.0f} MW</h2>
     </div>
     """, unsafe_allow_html=True)
 
@@ -852,7 +853,7 @@ with col_peak3:
     st.markdown(f"""
     <div class='metric-card'>
         <p style='color:#888; margin:0; font-size:1.3rem;'>Peak Reduction</p>
-        <h2 style='color:#4A9EFF; margin:0; font-size:1.3rem;'>{peak_reduction_pct:.2f}%</h3>
+        <h2 style='color:#4A9EFF; margin:0; font-size:1.3rem;'>{peak_reduction_pct:.2f}%</h2>
     </div>
     """, unsafe_allow_html=True)
 
@@ -860,7 +861,7 @@ with col_peak4:
     st.markdown(f"""
     <div class='metric-card'>
         <p style='color:#888; margin:0; font-size:1.3rem;'>Peak Load Shed</p>
-        <h2 style='color:#F39C12; margin:0; font-size:1.3rem;'>{peak_reduction_mw:,.2f} MW</h3>
+        <h2 style='color:#F39C12; margin:0; font-size:1.3rem;'>{peak_reduction_mw:,.2f} MW</h2>
     </div>
     """, unsafe_allow_html=True)
 
@@ -869,8 +870,6 @@ if apply_intervention_flag:
     <p style='color:#888; font-size:0.8rem; margin-top:6px;'>
     <strong>Max Reduction During SPA Events:</strong> {SYSTEM_REDUCTION_MW:.0f} MW per event
     </p>
-    """, unsafe_allow_html=True)
-    st.markdown(f"""
     <div class='success-box'>
     <strong>Critical Events Intervened (Annual):</strong> {NOTEBOOK_SPA_EVENTS} SPA events
     <br>Based on dual-confirmation (Sense + Predict) logic from notebook.
