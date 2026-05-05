@@ -961,6 +961,12 @@ if apply_intervention_flag:
     """, unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
+
+st.write("Debug: df_view shape", df_view.shape)
+st.write("Debug: simulated_curve size", len(simulated_curve))
+st.write("Debug: any nulls in simulated_curve?", simulated_curve.isnull().any())
+st.write("Debug: peak_idx", peak_idx)
+st.write("Debug: peak_idx in df_view index?", peak_idx in df_view.index)
 # ============================================================
 # BEFORE / AFTER CHART (preserved structure, with grouped CRITICAL shading)
 # ============================================================
