@@ -17,6 +17,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+st.set_page_config(initial_sidebar_state="expanded")
+st._config.set_option("server.enableCORS", False)
+st._config.set_option("server.enableXsrfProtection", False)
 # ============================================================
 # CUSTOM STYLES
 # ============================================================
@@ -968,99 +971,99 @@ st.write("Debug: any nulls in simulated_curve?", simulated_curve.isnull().any())
 st.write("Debug: peak_idx", peak_idx)
 st.write("Debug: peak_idx in df_view index?", peak_idx in df_view.index)
 # ============================================================
-# BEFORE / AFTER CHART (preserved structure, with grouped CRITICAL shading)
+# BEFORE / AFTER CHART (optimised for speed)
 # ============================================================
 st.markdown("#### Before vs After Grid Saver - Demand with Intervention")
 
 if df_view.empty:
     st.warning("No data to display chart.")
 else:
-    fig = make_subplots(
-        rows=2, cols=1,
-        subplot_titles=('Grid Demand (MW)', 'Load Reduction (MW)'),
-        vertical_spacing=0.12,
-        shared_xaxes=True
-    )
+    # Downsample if more than 2000 points (for performance)
+    if len(df_view) > 2000:
+        step = len(df_view) // 2000
+        plot_df = df_view.iloc[::step].copy()
+        st.caption(f"Note: Chart downsampled from {len(df_view)} to {len(plot_df)} points for performance.")
+    else:
+        plot_df = df_view.copy()
 
-    # BEFORE line (always visible)
+    fig = go.Figure()
+
+    # Original demand
     fig.add_trace(go.Scatter(
-        x=df_view[DATETIME_COL],
-        y=simulated_curve,
+        x=plot_df[DATETIME_COL],
+        y=plot_df['simulated_demand_mw'],
         mode='lines',
-        name='Simulated Demand (Vulnerability-Scaled)',
-        line=dict(color='#E74C3C', width=2),
-    ), row=1, col=1)
+        name='Original Demand',
+        line=dict(color='#E74C3C', width=1.5),
+    ))
 
-    # AFTER line (only when toggle ON)
+    # Adjusted demand (only if intervention ON)
     if apply_intervention_flag:
         fig.add_trace(go.Scatter(
-            x=df_view[DATETIME_COL],
-            y=optimized_curve,
+            x=plot_df[DATETIME_COL],
+            y=plot_df['optimized_demand_mw'],
             mode='lines',
             name='After Grid Saver',
-            line=dict(color='#2ECC71', width=2, dash='dash'),
-        ), row=1, col=1)
+            line=dict(color='#2ECC71', width=1.5, dash='dash'),
+        ))
 
-    # Reduction bars (always exist, zero when OFF)
+    # Reduction bars (transparent if zero)
+    reduction_vals = plot_df['grid_saver_reduction_mw'] if apply_intervention_flag else [0]*len(plot_df)
     fig.add_trace(go.Bar(
-        x=df_view[DATETIME_COL],
-        y=reduction_curve,
+        x=plot_df[DATETIME_COL],
+        y=reduction_vals,
         name='Load Reduction',
         marker_color='#F39C12',
-        opacity=0.6,
-    ), row=2, col=1)
+        opacity=0.4,
+        yaxis='y2'
+    ))
 
-    # Mark peak (safe indexing)
-    if peak_idx in df_view.index:
-        fig.add_trace(go.Scatter(
-            x=[df_view.loc[peak_idx, DATETIME_COL]],
-            y=[peak_observed],
-            mode='markers',
-            name=f'Peak: {peak_observed:,.0f} MW',
-            marker=dict(color='#FFFFFF', size=8, symbol='star'),
-        ), row=1, col=1)
+    # Peak marker
+    fig.add_trace(go.Scatter(
+        x=[plot_df.loc[peak_idx, DATETIME_COL]],
+        y=[peak_observed],
+        mode='markers',
+        name=f'Peak: {peak_observed:,.0f} MW',
+        marker=dict(color='white', size=8, symbol='star'),
+    ))
 
-    # --- GROUPED CRITICAL SHADING (continuous blocks) ---
-    # Create a temporary column for grouping consecutive CRITICAL periods
-    critical_mask = df_view['grid_status'] == 'CRITICAL'
-    # Only add shading if there is at least one critical period
+    # Critical shading: only plot contiguous blocks (limit to reduce objects)
+    critical_mask = plot_df['grid_status'] == 'CRITICAL'
     if critical_mask.any():
-        # Create block IDs
-        block_id = (critical_mask != critical_mask.shift()).cumsum()
-        df_view['_block'] = block_id
-        critical_groups = df_view[critical_mask].groupby('_block')
-        for _, group in critical_groups:
-            fig.add_vrect(
-                x0=group[DATETIME_COL].min(),
-                x1=group[DATETIME_COL].max(),
-                fillcolor="#E74C3C",
-                opacity=0.04,
-                line_width=0,
-                layer='below',
-            )
-        # Remove temporary column to avoid clutter
-        df_view.drop(columns=['_block'], inplace=True)
+        # Find contiguous blocks
+        plot_df['block'] = (critical_mask != critical_mask.shift()).cumsum()
+        for _, group in plot_df[critical_mask].groupby('block'):
+            if len(group) > 0:
+                fig.add_vrect(
+                    x0=group[DATETIME_COL].min(),
+                    x1=group[DATETIME_COL].max(),
+                    fillcolor="#E74C3C",
+                    opacity=0.05,
+                    line_width=0,
+                    layer='below'
+                )
+        plot_df.drop(columns=['block'], inplace=True)
 
     fig.update_layout(
         paper_bgcolor='#161B22',
         plot_bgcolor='#161B22',
         font=dict(color='white'),
-        height=500,
-        legend=dict(bgcolor='#1A1A2E', bordercolor='#333'),
+        height=450,
+        legend=dict(bgcolor='#1A1A2E'),
+        xaxis=dict(gridcolor='#30363D'),
+        yaxis=dict(gridcolor='#30363D', title='Demand (MW)'),
+        yaxis2=dict(title='Reduction (MW)', overlaying='y', side='right', showgrid=False),
         hovermode='x unified'
     )
-    fig.update_xaxes(gridcolor='#30363D', title_text='Datetime', row=2, col=1)
-    fig.update_yaxes(gridcolor='#30363D', title_text='Demand (MW)', row=1, col=1)
-    fig.update_yaxes(gridcolor='#30363D', title_text='Reduction (MW)', row=2, col=1)
 
     st.plotly_chart(fig, width='stretch')
 
-# One‑line caption (always show, even if chart is empty)
-st.markdown("""
-<p style='color:#888; font-size:0.8rem; margin-top:6px;'>
-🔴 Shaded regions indicate sustained CRITICAL grid stress periods where Grid Saver intervention is triggered.
-</p>
-""", unsafe_allow_html=True)
+    # Caption
+    st.markdown("""
+    <p style='color:#888; font-size:0.8rem; margin-top:6px;'>
+    🔴 Shaded regions indicate sustained CRITICAL grid stress periods where Grid Saver intervention is triggered.
+    </p>
+    """, unsafe_allow_html=True)
 
 # ============================================================
 # 6-HOUR BEFORE/AFTER PEAK WINDOW (inside expander)
