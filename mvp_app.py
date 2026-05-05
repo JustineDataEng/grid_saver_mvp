@@ -777,19 +777,26 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ============================================================
 # LOAD REDUCTION SIMULATION (using locked notebook values)
 # ============================================================
-st.markdown("## Load Reduction Simulation")
-st.markdown(f"""
-<div class='info-box'>
-<strong>Simulation Basis (Three‑Layer Baseline)</strong><br>
-• Theoretical baseline (explanation only): <strong>{THEORETICAL_BASELINE_MW:,} MW</strong><br>
-• Model operational max (95% of theoretical): <strong>{MODEL_PEAK_MW:,.0f} MW</strong><br>
-• Observed demand peak from data: <strong>{peak_observed:,.0f} MW</strong><br>
-• HVAC share: {HVAC_SHARE*100:.0f}% of total grid load = {hvac_load_mw:,.0f} MW<br>
-• HVAC reduction applied: <strong>{reduction_rate_percent}%</strong><br>
-• System impact per event: <strong>{SYSTEM_REDUCTION_MW:.1f} MW</strong> ({SYSTEM_REDUCTION_MW/THEORETICAL_BASELINE_MW*100:.1f}% of theoretical grid)<br>
-• Annual SPA events (dual‑confirmed): <strong>{NOTEBOOK_SPA_EVENTS}</strong>
-</div>
-""", unsafe_allow_html=True)
+with st.expander("Simulation Details & Assumptions"):
+    st.markdown(f"""
+    <div class='info-box'>
+    <strong>Three-Layer Baseline</strong><br>
+    • Theoretical baseline: {THEORETICAL_BASELINE_MW:,} MW<br>
+    • Model max (95%): {MODEL_PEAK_MW:,.0f} MW<br>
+    • Observed peak: {peak_observed:,.0f} MW<br><br>
+
+    <strong>HVAC Model</strong><br>
+    • HVAC share: {HVAC_SHARE*100:.0f}% ({hvac_load_mw:,.0f} MW)<br>
+    • Reduction applied: {reduction_rate_percent}%<br>
+    • Per-event impact: {SYSTEM_REDUCTION_MW:.1f} MW<br><br>
+
+    <strong>Annual Logic</strong><br>
+    • SPA events: {NOTEBOOK_SPA_EVENTS}<br>
+    • Gross: {ANNUAL_GROSS_MWH:,.0f} MWh<br>
+    • Rebound: {ANNUAL_REBOUND_MWH:,.0f} MWh<br>
+    • Net: {ANNUAL_NET_MWH:,.0f} MWh
+    </div>
+    """, unsafe_allow_html=True)
 
 if reduction_rate_percent != 4:
     st.warning(f"⚠️ Validated at 4% HVAC reduction = {SYSTEM_REDUCTION_MW:.1f} MW ({SYSTEM_REDUCTION_MW/THEORETICAL_BASELINE_MW*100:.1f}% grid impact). Results at {reduction_rate_percent}% are proportionally scaled.")
