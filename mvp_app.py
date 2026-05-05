@@ -601,7 +601,7 @@ fig_trend.update_layout(
 )
 st.plotly_chart(fig_trend, width='stretch')
 
-with st.expander("🔍 How to read this chart"):
+with st.expander("How to read this chart"):
     st.markdown("""
     <div class='info-box'>
     <strong>Chart Guide:</strong> Green=STABLE (&lt;40), Yellow=WARNING (40-69), Red=CRITICAL (>=70)<br>
@@ -942,15 +942,16 @@ fig.update_yaxes(gridcolor='#30363D', title_text='Demand (MW)', row=1, col=1)
 fig.update_yaxes(gridcolor='#30363D', title_text='Reduction (MW)', row=2, col=1)
 st.plotly_chart(fig, width='stretch')
 
-st.markdown("""
-<div class='info-box'>
-<strong>Chart Guide:</strong><br>
-• <span style='color:#E74C3C'>🔴 Red line:</span> Simulated demand (vulnerability‑scaled, 55-95% of theoretical baseline)<br>
-• <span style='color:#2ECC71'>🟢 Green dashed line:</span> Demand after Grid Saver intervention (ONLY shown when toggle is ON)<br>
-• <span style='color:#F39C12'>🟠 Orange bars:</span> Load reduction achieved during SPA-triggered hours (zero when toggle OFF)<br>
-• <span style='color:#FFFFFF'>⭐ White star:</span> Peak demand timestamp
-</div>
-""", unsafe_allow_html=True)
+with st.expander("How to read this chart (Demand & Reduction)"):
+    st.markdown("""
+    <div class='info-box'>
+    <strong>Chart Guide:</strong><br>
+    • <span style='color:#E74C3C'>🔴 Red line:</span> Simulated demand (vulnerability‑scaled, 55-95% of theoretical baseline)<br>
+    • <span style='color:#2ECC71'>🟢 Green dashed line:</span> Demand after Grid Saver intervention (ONLY shown when toggle is ON)<br>
+    • <span style='color:#F39C12'>🟠 Orange bars:</span> Load reduction achieved during SPA-triggered hours (zero when toggle OFF)<br>
+    • <span style='color:#FFFFFF'>⭐ White star:</span> Peak demand timestamp
+    </div>
+    """, unsafe_allow_html=True)
 
 st.markdown("""
 <div class='rebound-box'>
