@@ -89,9 +89,9 @@ NOTEBOOK_SPA_EVENTS = 154
 
 # ============================================================
 # THREE-LAYER BASELINE
-# Layer 1 — THEORETICAL: explanation + HVAC decomposition only. Never plotted.
-# Layer 2 — MODEL PEAK:  simulation envelope ceiling. Documented, not enforced.
-# Layer 3 — OBSERVED:    runtime max from data. Never overridden.
+# Layer 1 - THEORETICAL: explanation + HVAC decomposition only. Never plotted.
+# Layer 2 - MODEL PEAK:  simulation envelope ceiling. Documented, not enforced.
+# Layer 3 - OBSERVED:    runtime max from data. Never overridden.
 # ============================================================
 THEORETICAL_BASELINE_MW = 70320          # explanation only, used for HVAC narrative
 MODEL_PEAK_MW = THEORETICAL_BASELINE_MW * 0.95   # 66,804 MW (reference only, not enforced)
@@ -115,6 +115,10 @@ CARBON_COL = 'Carbon intensity gCO\u2082eq/kWh (direct)'
 CFE_COL = 'Carbon-free energy percentage (CFE%)'
 DECISION_THRESHOLD = 0.4
 KW_PER_HOME = 0.0920   # validated at 4% reduction for 25 homes
+
+# Impact translation constants (illustrative)
+CO2_PER_MWH = 0.4          # tonnes CO₂ per MWh (grid average)
+HOMES_PER_MWH = 10          # approximate homes powered per MWh
 
 MONTH_NAMES = {
     1: 'January', 2: 'February', 3: 'March', 4: 'April',
@@ -292,7 +296,7 @@ def act_layer(df_input, reduction_rate_percent, apply_intervention_flag):
     df['spa_action_triggered'] = df['sense_triggered'] & df['predict_triggered']
 
     # DEMAND MODEL: synthetic envelope, NOT measured telemetry.
-    # Range: 55% → 95% of theoretical baseline.
+    # Range: 55% to 95% of theoretical baseline.
     # Label in all charts as "Simulated Demand (Vulnerability-Scaled)"
     base_pct = 0.55
     peak_pct = 0.95
@@ -455,6 +459,18 @@ else:
 # Totals (for the filtered period, not used for annual metrics)
 total_reduction_mwh = reduction_curve.sum()
 total_rebound_mwh = df_view['rebound_mw'].sum()
+net_live_mwh = total_reduction_mwh - total_rebound_mwh
+
+# Critical‑only metrics (for the Critical Impact Card)
+critical_mask = df_view['grid_status'] == 'CRITICAL'
+critical_gross = df_view.loc[critical_mask, 'grid_saver_reduction_mw'].sum()
+critical_rebound = df_view.loc[critical_mask, 'rebound_mw'].sum()
+critical_net = critical_gross - critical_rebound
+critical_hours = critical_mask.sum()
+
+# Translation to homes & CO₂ (illustrative)
+co2_saved = net_live_mwh * CO2_PER_MWH
+homes_powered = net_live_mwh * HOMES_PER_MWH
 
 # Current row for status
 current_row = df_view.iloc[-1]
@@ -751,7 +767,7 @@ else:
 - Maintain standard monitoring
 """)
 
-# Only show disabled message when intervention is OFF (no duplicate impact summary)
+# Only show disabled message when intervention is OFF
 if not apply_intervention_flag:
     st.markdown("""
     <div style='background:#161B22; border-left:4px solid #888; padding:10px 14px; border-radius:6px; margin-top:12px;'>
@@ -764,6 +780,73 @@ if not apply_intervention_flag:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
+# ============================================================
+# TWO‑COLUMN IMPACT SECTION (Live + Critical)
+# ============================================================
+if apply_intervention_flag:
+    col_left, col_right = st.columns(2)
+
+    # --- LIVE IMPACT CARD (dynamic, always shown) ---
+    with col_left:
+        st.markdown(f"""
+        <div style='background:#161B22; border:1px solid #4A9EFF; padding:16px; border-radius:10px; margin:5px 0;'>
+            <h3 style='color:#4A9EFF; margin:0 0 8px 0;'>⚡ Live Grid Impact</h3>
+            <p style='color:#CCCCCC; font-size:0.85rem; margin-bottom:12px;'>
+            Impact within the selected time window:
+            </p>
+            <div style='display:flex; justify-content:space-between; flex-wrap:wrap;'>
+                <div style='flex:1; min-width:100px; text-align:center;'>
+                    <p style='color:#888; margin:0;'>Net Energy Saved</p>
+                    <h3 style='color:#4A9EFF; margin:0;'>{net_live_mwh:,.0f} MWh</h3>
+                </div>
+                <div style='flex:1; min-width:100px; text-align:center;'>
+                    <p style='color:#888; margin:0;'>Homes Powered</p>
+                    <h3 style='color:#2ECC71; margin:0;'>{homes_powered:,.0f}</h3>
+                </div>
+                <div style='flex:1; min-width:100px; text-align:center;'>
+                    <p style='color:#888; margin:0;'>CO₂ Avoided</p>
+                    <h3 style='color:#F39C12; margin:0;'>{co2_saved:,.0f} t</h3>
+                </div>
+            </div>
+            <p style='color:#555; font-size:0.7rem; margin-top:10px; text-align:center;'>
+            Estimates based on typical grid averages (illustrative only).
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # --- CRITICAL IMPACT CARD (conditional, only if critical_net > 0) ---
+    if critical_net > 0:
+        with col_right:
+            st.markdown(f"""
+            <div style='background:#161B22; border:1px solid #E74C3C; padding:16px; border-radius:10px; margin:5px 0;'>
+                <h3 style='color:#E74C3C; margin:0 0 8px 0;'>🔴 Critical‑Period Impact</h3>
+                <p style='color:#CCCCCC; font-size:0.85rem; margin-bottom:12px;'>
+                Impact during CRITICAL grid stress conditions:
+                </p>
+                <div style='display:flex; justify-content:space-between; flex-wrap:wrap;'>
+                    <div style='flex:1; min-width:100px; text-align:center;'>
+                        <p style='color:#888; margin:0;'>Net Reduction</p>
+                        <h3 style='color:#E74C3C; margin:0;'>{critical_net:,.0f} MWh</h3>
+                    </div>
+                    <div style='flex:1; min-width:100px; text-align:center;'>
+                        <p style='color:#888; margin:0;'>Critical Hours</p>
+                        <h3 style='color:#F39C12; margin:0;'>{critical_hours}</h3>
+                    </div>
+                </div>
+                <p style='color:#888; font-size:0.7rem; margin-top:10px; text-align:center;'>
+                Grid Saver response focused on high‑risk periods
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        # If no critical impact, hide the right column (or leave empty)
+        with col_right:
+            st.markdown("")
+else:
+    # Intervention OFF (show nothing)
+    pass
+
+st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
 # LOAD REDUCTION SIMULATION (using locked notebook values)
@@ -829,7 +912,7 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
-# Peak reduction – small text boxes (aligned with Impact at Scale style)
+# Peak reduction
 col_peak1, col_peak2, col_peak3, col_peak4 = st.columns(4)
 
 with col_peak1:
@@ -879,7 +962,7 @@ if apply_intervention_flag:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
-# BEFORE / AFTER CHART (preserved structure)
+# BEFORE / AFTER CHART (preserved structure, with grouped CRITICAL shading)
 # ============================================================
 st.markdown("#### Before vs After Grid Saver - Demand with Intervention")
 fig = make_subplots(
@@ -927,6 +1010,21 @@ if peak_idx in df_view.index:
         marker=dict(color='#FFFFFF', size=8, symbol='star'),
     ), row=1, col=1)
 
+# --- GROUPED CRITICAL SHADING (continuous blocks) ---
+critical_mask = df_view['grid_status'] == 'CRITICAL'
+df_view['critical_block'] = (critical_mask != critical_mask.shift()).cumsum()
+critical_groups = df_view[critical_mask].groupby('critical_block')
+
+for _, group in critical_groups:
+    fig.add_vrect(
+        x0=group[DATETIME_COL].min(),
+        x1=group[DATETIME_COL].max(),
+        fillcolor="#E74C3C",
+        opacity=0.04,
+        line_width=0,
+        layer='below',
+    )
+
 fig.update_layout(
     paper_bgcolor='#161B22',
     plot_bgcolor='#161B22',
@@ -939,6 +1037,13 @@ fig.update_xaxes(gridcolor='#30363D', title_text='Datetime', row=2, col=1)
 fig.update_yaxes(gridcolor='#30363D', title_text='Demand (MW)', row=1, col=1)
 fig.update_yaxes(gridcolor='#30363D', title_text='Reduction (MW)', row=2, col=1)
 st.plotly_chart(fig, width='stretch')
+
+# One‑line caption explaining the shading
+st.markdown("""
+<p style='color:#888; font-size:0.8rem; margin-top:6px;'>
+🔴 Shaded regions indicate sustained CRITICAL grid stress periods where Grid Saver intervention is triggered.
+</p>
+""", unsafe_allow_html=True)
 
 with st.expander("How to read this chart (Demand & Reduction)"):
     st.markdown("""
