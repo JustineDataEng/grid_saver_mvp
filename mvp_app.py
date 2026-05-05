@@ -965,108 +965,96 @@ st.markdown("<br>", unsafe_allow_html=True)
 # BEFORE / AFTER CHART (preserved structure, with grouped CRITICAL shading)
 # ============================================================
 st.markdown("#### Before vs After Grid Saver - Demand with Intervention")
-fig = make_subplots(
-    rows=2, cols=1,
-    subplot_titles=('Grid Demand (MW)', 'Load Reduction (MW)'),
-    vertical_spacing=0.12,
-    shared_xaxes=True
-)
 
-# BEFORE line (always visible)
-fig.add_trace(go.Scatter(
-    x=df_view[DATETIME_COL],
-    y=simulated_curve,
-    mode='lines',
-    name='Simulated Demand (Vulnerability-Scaled)',
-    line=dict(color='#E74C3C', width=2),
-), row=1, col=1)
-
-# AFTER line (only when toggle ON)
-if apply_intervention_flag:
-    fig.add_trace(go.Scatter(
-        x=df_view[DATETIME_COL],
-        y=optimized_curve,
-        mode='lines',
-        name='After Grid Saver',
-        line=dict(color='#2ECC71', width=2, dash='dash'),
-    ), row=1, col=1)
-
-# Reduction bars (always exist, zero when OFF)
-fig.add_trace(go.Bar(
-    x=df_view[DATETIME_COL],
-    y=reduction_curve,
-    name='Load Reduction',
-    marker_color='#F39C12',
-    opacity=0.6,
-), row=2, col=1)
-
-# Mark peak (safe indexing)
-if peak_idx in df_view.index:
-    fig.add_trace(go.Scatter(
-        x=[df_view.loc[peak_idx, DATETIME_COL]],
-        y=[peak_observed],
-        mode='markers',
-        name=f'Peak: {peak_observed:,.0f} MW',
-        marker=dict(color='#FFFFFF', size=8, symbol='star'),
-    ), row=1, col=1)
-
-# --- GROUPED CRITICAL SHADING (continuous blocks) ---
-critical_mask = df_view['grid_status'] == 'CRITICAL'
-df_view['critical_block'] = (critical_mask != critical_mask.shift()).cumsum()
-critical_groups = df_view[critical_mask].groupby('critical_block')
-
-for _, group in critical_groups:
-    fig.add_vrect(
-        x0=group[DATETIME_COL].min(),
-        x1=group[DATETIME_COL].max(),
-        fillcolor="#E74C3C",
-        opacity=0.04,
-        line_width=0,
-        layer='below',
+if df_view.empty:
+    st.warning("No data to display chart.")
+else:
+    fig = make_subplots(
+        rows=2, cols=1,
+        subplot_titles=('Grid Demand (MW)', 'Load Reduction (MW)'),
+        vertical_spacing=0.12,
+        shared_xaxes=True
     )
 
-fig.update_layout(
-    paper_bgcolor='#161B22',
-    plot_bgcolor='#161B22',
-    font=dict(color='white'),
-    height=500,
-    legend=dict(bgcolor='#1A1A2E', bordercolor='#333'),
-    hovermode='x unified'
-)
-fig.update_xaxes(gridcolor='#30363D', title_text='Datetime', row=2, col=1)
-fig.update_yaxes(gridcolor='#30363D', title_text='Demand (MW)', row=1, col=1)
-fig.update_yaxes(gridcolor='#30363D', title_text='Reduction (MW)', row=2, col=1)
-st.plotly_chart(fig, width='stretch')
+    # BEFORE line (always visible)
+    fig.add_trace(go.Scatter(
+        x=df_view[DATETIME_COL],
+        y=simulated_curve,
+        mode='lines',
+        name='Simulated Demand (Vulnerability-Scaled)',
+        line=dict(color='#E74C3C', width=2),
+    ), row=1, col=1)
 
-# One‑line caption explaining the shading
+    # AFTER line (only when toggle ON)
+    if apply_intervention_flag:
+        fig.add_trace(go.Scatter(
+            x=df_view[DATETIME_COL],
+            y=optimized_curve,
+            mode='lines',
+            name='After Grid Saver',
+            line=dict(color='#2ECC71', width=2, dash='dash'),
+        ), row=1, col=1)
+
+    # Reduction bars (always exist, zero when OFF)
+    fig.add_trace(go.Bar(
+        x=df_view[DATETIME_COL],
+        y=reduction_curve,
+        name='Load Reduction',
+        marker_color='#F39C12',
+        opacity=0.6,
+    ), row=2, col=1)
+
+    # Mark peak (safe indexing)
+    if peak_idx in df_view.index:
+        fig.add_trace(go.Scatter(
+            x=[df_view.loc[peak_idx, DATETIME_COL]],
+            y=[peak_observed],
+            mode='markers',
+            name=f'Peak: {peak_observed:,.0f} MW',
+            marker=dict(color='#FFFFFF', size=8, symbol='star'),
+        ), row=1, col=1)
+
+    # --- GROUPED CRITICAL SHADING (continuous blocks) ---
+    # Create a temporary column for grouping consecutive CRITICAL periods
+    critical_mask = df_view['grid_status'] == 'CRITICAL'
+    # Only add shading if there is at least one critical period
+    if critical_mask.any():
+        # Create block IDs
+        block_id = (critical_mask != critical_mask.shift()).cumsum()
+        df_view['_block'] = block_id
+        critical_groups = df_view[critical_mask].groupby('_block')
+        for _, group in critical_groups:
+            fig.add_vrect(
+                x0=group[DATETIME_COL].min(),
+                x1=group[DATETIME_COL].max(),
+                fillcolor="#E74C3C",
+                opacity=0.04,
+                line_width=0,
+                layer='below',
+            )
+        # Remove temporary column to avoid clutter
+        df_view.drop(columns=['_block'], inplace=True)
+
+    fig.update_layout(
+        paper_bgcolor='#161B22',
+        plot_bgcolor='#161B22',
+        font=dict(color='white'),
+        height=500,
+        legend=dict(bgcolor='#1A1A2E', bordercolor='#333'),
+        hovermode='x unified'
+    )
+    fig.update_xaxes(gridcolor='#30363D', title_text='Datetime', row=2, col=1)
+    fig.update_yaxes(gridcolor='#30363D', title_text='Demand (MW)', row=1, col=1)
+    fig.update_yaxes(gridcolor='#30363D', title_text='Reduction (MW)', row=2, col=1)
+
+    st.plotly_chart(fig, width='stretch')
+
+# One‑line caption (always show, even if chart is empty)
 st.markdown("""
 <p style='color:#888; font-size:0.8rem; margin-top:6px;'>
 🔴 Shaded regions indicate sustained CRITICAL grid stress periods where Grid Saver intervention is triggered.
 </p>
 """, unsafe_allow_html=True)
-
-with st.expander("How to read this chart (Demand & Reduction)"):
-    st.markdown("""
-    <div class='info-box'>
-    <strong>Chart Guide:</strong><br>
-    • <span style='color:#E74C3C'>🔴 Red line:</span> Simulated demand (vulnerability‑scaled, 55-95% of theoretical baseline)<br>
-    • <span style='color:#2ECC71'>🟢 Green dashed line:</span> Demand after Grid Saver intervention (ONLY shown when toggle is ON)<br>
-    • <span style='color:#F39C12'>🟠 Orange bars:</span> Load reduction achieved during SPA-triggered hours (zero when toggle OFF)<br>
-    • <span style='color:#FFFFFF'>⭐ White star:</span> Peak demand timestamp
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("""
-<div class='rebound-box'>
-⚠️ <strong>Thermal Rebound (Snapback) Effect:</strong><br>
-When HVAC systems are suppressed during an SPA event, they turn back on simultaneously afterward,
-creating a secondary demand spike. Grid Saver models this using:<br>
-• <strong>85% Compliance Rate</strong>: behavioral assumption from literature, not validated vs Pecan Street.<br>
-• <strong>60% Rebound Rate</strong>: 60% of shed load returns post-event<br>
-• <strong>Corrected rebound timing</strong>: rebound occurs in the hour following a reduction.
-</div>
-""", unsafe_allow_html=True)
-st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
 # 6-HOUR BEFORE/AFTER PEAK WINDOW (inside expander)
